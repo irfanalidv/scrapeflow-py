@@ -5,12 +5,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="scrapeflow-py",
-    version="0.1.0",
+    version="0.1.1",
     author="Irfan Ali",
     description="An opinionated scraping workflow engine built on Playwright",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/irfanalidv/ScrapeFlow",
+    url="https://github.com/irfanalidv/scrapeflow-py",
     license="MIT",
     packages=find_packages(),
     classifiers=[

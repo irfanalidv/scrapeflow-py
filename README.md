@@ -2,7 +2,7 @@
 
 **An opinionated scraping workflow engine built on Playwright**
 
-[![GitHub](https://img.shields.io/github/license/irfanalidv/ScrapeFlow)](https://github.com/irfanalidv/ScrapeFlow/blob/main/LICENSE)
+[![GitHub](https://img.shields.io/github/license/irfanalidv/scrapeflow-py)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE)
 
 [![PyPI](https://img.shields.io/pypi/v/scrapeflow-py)](https://pypi.org/project/scrapeflow-py/)
 
@@ -12,7 +12,7 @@
 
 [![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/)
 
-[![Status](https://img.shields.io/badge/status-active-success)](https://github.com/irfanalidv/ScrapeFlow)
+[![Status](https://img.shields.io/badge/status-active-success)](https://github.com/irfanalidv/scrapeflow-py)
 
 ---
 
@@ -38,8 +38,8 @@ pip install scrapeflow-py
 Or install from source:
 
 ```bash
-git clone https://github.com/irfanalidv/ScrapeFlow.git
-cd ScrapeFlow
+git clone https://github.com/irfanalidv/scrapeflow-py.git
+cd scrapeflow-py
 pip install -e .
 ```
 
@@ -342,7 +342,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Irfan Ali - [GitHub](https://github.com/irfanalidv)
 
-Project Link: [https://github.com/irfanalidv/ScrapeFlow](https://github.com/irfanalidv/ScrapeFlow)
+Project Link: [https://github.com/irfanalidv/scrapeflow-py](https://github.com/irfanalidv/scrapeflow-py)
 
 ---
 
