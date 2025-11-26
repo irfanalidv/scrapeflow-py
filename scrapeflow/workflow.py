@@ -102,6 +102,9 @@ class Workflow:
         steps_completed = []
         steps_failed = []
         final_data = None
+        
+        # Add engine (scraper) to context for step functions
+        self.context["scraper"] = engine
 
         for step in self.steps:
             if not step.should_execute(self.context):

@@ -8,7 +8,7 @@ from scrapeflow.config import (
     RateLimitConfig,
     RetryConfig,
 )
-from scrapeflow.extractors import StructuredExtractor
+from scrapeflow.extractors import StructuredExtractor, Extractor
 
 
 async def main():
@@ -55,7 +55,6 @@ async def main():
                 "schema": {
                     "text": ".text",
                     "author": ".author",
-                    "tags": ".tag",
                 },
             }
         }
@@ -63,9 +62,25 @@ async def main():
         extractor = StructuredExtractor(schema)
         data = await extractor.extract(scraper.page)
 
-        print("Extracted quotes:")
-        for quote in data.get("quotes", []):
-            print(f"  - {quote}")
+        # Extract tags separately using Extractor for each quote
+        quotes_with_tags = []
+        quote_elements = scraper.page.locator(".quote")
+        count = await quote_elements.count()
+        
+        for i, quote_data in enumerate(data.get("quotes", [])[:5]):  # First 5
+            quote_elem = quote_elements.nth(i)
+            tags = await Extractor.extract_texts(quote_elem, ".tag")
+            quote_data["tags"] = tags
+            quotes_with_tags.append(quote_data)
+
+        print("📝 Extracted quotes:")
+        for i, quote in enumerate(quotes_with_tags, 1):
+            text = quote.get("text", "")[:60] if quote.get("text") else ""
+            author = quote.get("author", "")
+            tags = quote.get("tags", [])
+            print(f"\n{i}. {text}...")
+            print(f"   Author: {author}")
+            print(f"   Tags: {', '.join(tags) if tags else 'None'}")
 
         # Get metrics
         metrics = scraper.get_metrics()
