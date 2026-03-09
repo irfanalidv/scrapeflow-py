@@ -225,6 +225,12 @@ class ScrapeFlow:
 
         await self.page.screenshot(path=path, full_page=full_page)
 
+    async def save_storage_state(self, path: str) -> None:
+        """Save cookies and local storage for session persistence. Use with storage_state_path on next run."""
+        if not self._is_running:
+            raise ScrapeFlowError("Engine not started. Call start() first.")
+        await self.runtime.save_storage_state(path)
+
     async def execute_step(self, step: Step, context: Dict[str, Any]) -> Any:
         """Execute a workflow step with retry and error handling."""
         start_time = self.monitor.start_request()

@@ -59,6 +59,21 @@ class BrowserConfig:
     slow_mo: int = 0  # milliseconds
     args: List[str] = field(default_factory=list)
     proxy: Optional[Dict[str, str]] = None
+    storage_state_path: Optional[str] = None  # Load cookies/session from file on start
+
+
+@dataclass
+class PaginationConfig:
+    """
+    Pagination control for multi-page extraction.
+
+    Limits: max_pages, max_results, max_wait_time (seconds).
+    """
+
+    max_pages: int = 100
+    max_results: Optional[int] = None
+    max_wait_time: Optional[float] = None  # seconds
+    auto_paginate: bool = True
 
 
 @dataclass

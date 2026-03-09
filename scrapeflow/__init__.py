@@ -16,6 +16,7 @@ from scrapeflow.specifications import (
     FieldSpec,
     ItemSpec,
     SpecificationExtractor,
+    HybridExtractor,
     ProductPriceSpec,
     JobListingSpec,
     TariffCodeSpec,
@@ -28,7 +29,17 @@ from scrapeflow.registry import (
     register_quotes_login_handler,
 )
 from scrapeflow.browser_runtime import PlaywrightBrowserRuntime
-from scrapeflow.mcp_backend import MCPBackend, PlaceholderMCPBackend, create_mcp_backend
+from scrapeflow.llm_extract import (
+    generate_schema_from_prompt,
+    extract_with_schema,
+    extract_with_schema_async,
+)
+from scrapeflow.mcp_backend import (
+    MCPBackend,
+    PlaceholderMCPBackend,
+    MistralLLMBackend,
+    create_mcp_backend,
+)
 from scrapeflow.exceptions import (
     ScrapeFlowError,
     ScrapeFlowRetryError,
@@ -38,7 +49,7 @@ from scrapeflow.exceptions import (
     ScrapeFlowRobotsDisallowedError,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "ScrapeFlow",
     "Workflow",
@@ -49,6 +60,7 @@ __all__ = [
     "FieldSpec",
     "ItemSpec",
     "SpecificationExtractor",
+    "HybridExtractor",
     "ProductPriceSpec",
     "JobListingSpec",
     "TariffCodeSpec",
@@ -60,6 +72,7 @@ __all__ = [
     "PlaywrightBrowserRuntime",
     "MCPBackend",
     "PlaceholderMCPBackend",
+    "MistralLLMBackend",
     "create_mcp_backend",
     "ScrapeFlowError",
     "ScrapeFlowRetryError",
@@ -67,5 +80,8 @@ __all__ = [
     "ScrapeFlowBlockedError",
     "ScrapeFlowValidationError",
     "ScrapeFlowRobotsDisallowedError",
+    "generate_schema_from_prompt",
+    "extract_with_schema",
+    "extract_with_schema_async",
 ]
 

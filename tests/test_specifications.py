@@ -19,6 +19,12 @@ def test_field_spec():
     assert spec.type == "text"
 
 
+def test_field_spec_fallback_selectors():
+    """Test FieldSpec with fallback selector list."""
+    spec = FieldSpec(selector=[".price", ".cost", "span.price-tag"], type="text")
+    assert spec.selector == [".price", ".cost", "span.price-tag"]
+
+
 def test_item_spec():
     """Test ItemSpec model."""
     spec = ItemSpec(

@@ -2,6 +2,14 @@
 
 Thank you for your interest in contributing to ScrapeFlow! This document provides guidelines and instructions for contributing.
 
+## License & Third-Party Code
+
+ScrapeFlow is MIT-licensed. When contributing:
+
+- **Do not copy or paste code** from AGPL, GPL, or other copyleft-licensed projects. Implement patterns from scratch.
+- **Ideas and concepts** (e.g. "schema-from-prompt", pagination limits) are not copyrightable—original implementations are fine.
+- If you use third-party libraries, ensure they are compatible with MIT (permissive licenses like MIT, Apache 2.0, BSD).
+
 ## Getting Started
 
 1. Fork the repository

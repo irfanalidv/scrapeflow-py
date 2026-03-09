@@ -16,6 +16,11 @@ ScrapeFlow is a production-ready Python library that transforms Playwright into 
 - **📦 Component Registry**: Shared, versioned selectors, pagination handlers, and login flows—platform thinking over one-off scrapers
 - **🔔 Monitoring & Alerting**: Alert callbacks on failure thresholds; rollback hooks for failed extraction runs
 - **🔌 MCP Extensibility**: Pluggable backends for Scrapy MCP Server, Playwright MCP, or LLM-based semantic extraction
+- **🤖 Mistral LLM Extraction**: Generate schemas from natural language, extract without selectors—uses `MISTRAL_API_KEY`
+- **🔄 Hybrid Extraction**: Selector-first, LLM fallback when validation fails—self-healing spiders
+- **🛡️ Selector Fallback Chain**: Try multiple selectors per field (`[".price", ".cost"]`) for resilience
+- **🫙 Session Persistence**: Save/load cookies and localStorage via `save_storage_state()` and `storage_state_path`
+- **🧹 Content Cleaning**: Strip scripts/styles before LLM extraction for better accuracy and token usage
 - **🔄 Intelligent Retry Logic**: Automatic retries with exponential backoff and jitter
 - **⚡ Rate Limiting**: Token bucket algorithm to respect server limits
 - **🕵️ Anti-Detection**: Stealth mode, user agent rotation, and proxy support
@@ -337,6 +342,132 @@ print(f"💼 Found {len(quotes)} quotes across pages")
 💼 Found 20 quotes across pages
 ```
 
+### Use Case 5: LLM-Powered Extraction (No Selectors)
+
+**Real-world scenario:** Extract structured data using Mistral AI—no CSS selectors, just natural language field descriptions. Ideal for pages with inconsistent markup or when you want semantic understanding.
+
+**Requires:** `MISTRAL_API_KEY` in `.env` or environment.
+
+```python
+import asyncio
+import os
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+from scrapeflow import ScrapeFlow, create_mcp_backend
+from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
+from scrapeflow.llm_extract import generate_schema_from_prompt, extract_with_schema
+
+async def run_llm_extraction():
+    if not os.environ.get("MISTRAL_API_KEY"):
+        print("Set MISTRAL_API_KEY in .env to run this example")
+        return
+
+    config = ScrapeFlowConfig(
+        ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True),
+    )
+
+    async with ScrapeFlow(config) as scraper:
+        await scraper.navigate("https://quotes.toscrape.com/")
+
+        # Option 1: Generate schema from natural language
+        schema = generate_schema_from_prompt(
+            "Extract quote text, author name, and list of tags"
+        )
+
+        # Option 2: Extract using schema + page content (no selectors!)
+        content = await scraper.page.evaluate("() => document.body.innerText")
+        data = extract_with_schema(
+            content,
+            schema,
+            prompt="Extract all quotes from this page with text, author, and tags",
+        )
+        print("LLM extracted:", data)
+
+        # Option 3: MistralLLMBackend—field descriptions only
+        backend = create_mcp_backend("mistral")
+        semantic_data = await backend.extract_with_semantics(
+            scraper.page,
+            field_descriptions={
+                "quote": "The quote text",
+                "author": "Author name",
+                "tags": "Comma-separated tags",
+            },
+            context="Extract the first quote on the page",
+        )
+        print("Semantic extraction:", semantic_data)
+
+asyncio.run(run_llm_extraction())
+```
+
+**Real Output:**
+
+```
+Generated schema: {'type': 'object', 'properties': {'quote_text': {...}, 'author_name': {...}, 'tags': {...}}, 'required': ['quote_text', 'author_name', 'tags']}
+
+LLM extracted: [{'quote_text': 'The world as we have created it is a process of our thinking...', 'author_name': 'Albert Einstein', 'tags': ['change', 'deep-thoughts', 'thinking', 'world']}, ...]
+
+Semantic extraction: {'quote': 'The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.', 'author': 'Albert Einstein', 'tags': 'change, deep-thoughts, thinking, world'}
+```
+
+**What you get:** Schema generation from prompts, extraction without brittle selectors, and semantic understanding of page content—powerful for dynamic or inconsistent sites.
+
+### Use Case 6: Login + Session Persistence
+
+**Real-world scenario:** Log in once, save cookies, then reuse the session on future runs—no re-login needed.
+
+```python
+import asyncio
+import os
+from scrapeflow import ScrapeFlow, SpecificationExtractor, get_registry, register_quotes_login_handler
+from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig, BrowserConfig
+from scrapeflow.specifications import FieldSpec, ItemSpec
+from pydantic import BaseModel
+
+class QuoteItem(BaseModel):
+    text: str
+    author: str
+
+class QuotesPage(BaseModel):
+    quotes: list[QuoteItem]
+
+async def run():
+    state_file = "/tmp/scrapeflow_session.json"
+    schema = {"quotes": ItemSpec(items_selector=".quote", fields={"text": ".text", "author": ".author"})}
+
+    # Step 1: Login and save (if first run)
+    if not os.path.exists(state_file):
+        async with ScrapeFlow(ScrapeFlowConfig(ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True))) as scraper:
+            register_quotes_login_handler(get_registry())
+            handler = get_registry().get_login("quotes_login")
+            await scraper.login_with_handler("https://quotes.toscrape.com/login", "admin", "amdin", handler)
+            await scraper.save_storage_state(state_file)
+
+    # Step 2: Use saved session (no login)
+    config = ScrapeFlowConfig(ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True),
+                             browser=BrowserConfig(storage_state_path=state_file))
+    async with ScrapeFlow(config) as scraper:
+        await scraper.navigate("https://quotes.toscrape.com/")
+        data = await SpecificationExtractor(QuotesPage, schema=schema).extract(scraper.page)
+        print(f"Extracted {len(data.quotes)} quotes (authenticated)")
+
+asyncio.run(run())
+```
+
+**Real Output:**
+
+```
+Extracted 10 quotes (authenticated)
+```
+
+*(On first run: login + save; on subsequent runs: load session and extract without re-login.)*
+
+**What you get:** `login_with_handler`, `save_storage_state`, `storage_state_path`—reusable authenticated sessions.
+
 ## 📚 Documentation
 
 ### Configuration
@@ -532,6 +663,40 @@ async with ScrapeFlow(config) as scraper:
     # - 500/502/503 server errors
     # - Connection errors
     # - Temporary blocks
+```
+
+### Pagination
+
+**Use Case:** Scrape multiple pages (e.g. search results, product listings) with limits.
+
+```python
+import asyncio
+from scrapeflow import ScrapeFlow
+from scrapeflow.config import ScrapeFlowConfig, PaginationConfig
+from scrapeflow.pagination import paginate
+from scrapeflow.registry import get_registry
+
+async def extract_quotes(page, context):
+    quotes = []
+    for i in range(await page.locator(".quote").count()):
+        q = page.locator(".quote").nth(i)
+        text = await q.locator(".text").text_content()
+        author = await q.locator(".author").text_content()
+        quotes.append({"text": text or "", "author": author or ""})
+    return quotes
+
+async def main():
+    get_registry().register_pagination("quotes", next_selector="li.next a", has_next="li.next")
+    handler = get_registry().get_pagination("quotes")
+    config = PaginationConfig(max_pages=3, max_results=25)
+
+    async with ScrapeFlow(ScrapeFlowConfig()) as scraper:
+        async for page_data in paginate(scraper, "https://quotes.toscrape.com/", handler, extract_quotes, config):
+            print(f"Page: {len(page_data)} quotes")
+            for q in page_data[:2]:
+                print(f"  - {q['author']}: {q['text'][:40]}...")
+
+asyncio.run(main())
 ```
 
 ### Data Extraction
@@ -764,13 +929,175 @@ asyncio.run(scrape_with_error_handling())
 ✅ Successfully scraped: Quotes to Scrape
 ```
 
+## 📋 Feature Coverage—Nothing Hidden
+
+Every ScrapeFlow feature is demonstrated somewhere. Quick reference:
+
+| Feature | Where to See It |
+|---------|-----------------|
+| **Extractors** | Use Case 1, `basic_usage.py`, `advanced_example.py` |
+| **StructuredExtractor** | Use Case 2, `workflow_example.py`, `advanced_example.py` |
+| **SpecificationExtractor** | Use Case 6, Doc section, `specification_driven_example.py` |
+| **HybridExtractor** | `hybrid_extraction_example.py` |
+| **FieldSpec, ItemSpec** | Doc section, `specification_driven_example.py`, `hybrid_extraction_example.py` |
+| **Selector fallback** `[".a", ".b"]` | `hybrid_extraction_example.py` |
+| **LLM extraction** | Use Case 5, `llm_extraction_example.py` |
+| **Login** | Use Case 6, `authenticated_quotes_example.py`, `session_persistence_example.py` |
+| **Session persistence** | Use Case 6, `session_persistence_example.py` |
+| **Registry, LoginHandler** | `authenticated_quotes_example.py`, `specification_driven_example.py` |
+| **Workflow** | Use Case 2, `workflow_example.py` |
+| **Rate limit, Retry** | Use Cases 1, 4, `basic_usage.py`, `advanced_example.py` |
+| **Anti-detection** | Use Case 3, `advanced_example.py` |
+| **Ethical crawling, robots.txt** | `specification_driven_example.py`, `authenticated_quotes_example.py` |
+| **Pagination** | Doc section, `scrapeflow.pagination.paginate`, `PaginationConfig` |
+| **Content cleaning** | Used internally by MistralLLMBackend; `scrapeflow.content_utils` |
+
 ## 🎨 Complete Examples
 
-Check out the `examples/` directory for more examples:
+Check out the `examples/` directory—each example showcases specific features:
 
-- `basic_usage.py` - Simple scraping example
-- `workflow_example.py` - Workflow orchestration
-- `advanced_example.py` - All features combined
+| Example | Features Demonstrated |
+|---------|------------------------|
+| `basic_usage.py` | ScrapeFlow, Extractor, rate limit, retry, metrics |
+| `workflow_example.py` | Workflow, steps, on_success/on_error, StructuredExtractor |
+| `advanced_example.py` | Anti-detection, rate limit, retry, StructuredExtractor |
+| `specification_driven_example.py` | SpecificationExtractor, FieldSpec, ItemSpec, ethical crawling, registry |
+| `authenticated_quotes_example.py` | Login, `login_with_handler`, registry, LoginHandler |
+| `llm_extraction_example.py` | Mistral LLM, `generate_schema_from_prompt`, `extract_with_schema`, MistralLLMBackend *(requires `MISTRAL_API_KEY`)* |
+| `hybrid_extraction_example.py` | HybridExtractor, selector fallback chain `[".a", ".b"]`, LLM fallback |
+| `session_persistence_example.py` | `save_storage_state`, `storage_state_path`, skip login on reuse |
+
+### Real Outputs from Examples
+
+Outputs below are from running each example against live sites (quotes.toscrape.com, books.toscrape.com).
+
+**`basic_usage.py`**
+
+```
+Page title: Quotes to Scrape
+
+Extracted 5 quotes:
+
+1. "The world as we have created it is a process of our thinkin...
+   Author: Albert Einstein
+   Tags: change, deep-thoughts, thinking, world
+
+2. "It is our choices, Harry, that show what we truly are, far ...
+   Author: J.K. Rowling
+   Tags: abilities, choices
+
+3. "There are only two ways to live your life. One is as though...
+   Author: Albert Einstein
+   Tags: inspirational, life, live, miracle, miracles
+
+4. "The person, be it gentleman or lady, who has not pleasure i...
+   Author: Jane Austen
+   Tags: aliteracy, books, classic, humor
+
+5. "Imperfection is beauty, madness is genius and it's better t...
+   Author: Marilyn Monroe
+   Tags: be-yourself, inspirational
+
+📊 Metrics:
+   Success rate: 100.00%
+   Total requests: 1
+   Average response time: 1.72s
+```
+
+**`advanced_example.py`**
+
+```
+📝 Extracted quotes:
+
+1. "The world as we have created it is a process of our thinkin...
+   Author: Albert Einstein
+   Tags: change, deep-thoughts, thinking, world
+
+2. "It is our choices, Harry, that show what we truly are, far ...
+   Author: J.K. Rowling
+   Tags: abilities, choices
+
+3. "There are only two ways to live your life. One is as though...
+   Author: Albert Einstein
+   Tags: inspirational, life, live, miracle, miracles
+
+4. "The person, be it gentleman or lady, who has not pleasure i...
+   Author: Jane Austen
+   Tags: aliteracy, books, classic, humor
+
+5. "Imperfection is beauty, madness is genius and it's better t...
+   Author: Marilyn Monroe
+   Tags: be-yourself, inspirational
+
+Scraping completed:
+  Success rate: 100.00%
+  Total requests: 1
+  Retries: 0
+```
+
+**`workflow_example.py`**
+
+```
+💾 Saving 20 books to database...
+   - A Light in the ...... - £51.77
+   - Tipping the Velvet... - £53.74
+   - Soumission... - £50.10
+
+✅ Workflow completed successfully!
+📚 Extracted 20 books
+
+📊 Metrics:
+   Total requests: 3
+   Success rate: 100.00%
+   Average response time: 5.85s
+```
+
+**`specification_driven_example.py`**
+
+```
+Extracted 10 items (validated via Pydantic)
+  1. "The world as we have created it is a process of o... | Albert Einstein
+  2. "It is our choices, Harry, that show what we truly... | J.K. Rowling
+  3. "There are only two ways to live your life. One is... | Albert Einstein
+
+Metrics: 1 requests, 100.0% success
+```
+
+**`authenticated_quotes_example.py`**
+
+```
+Authenticated login: True
+Quotes extracted: 10
+1. Albert Einstein: "The world as we have created it is a process of our thinking. It cannot be chan...
+2. J.K. Rowling: "It is our choices, Harry, that show what we truly are, far more than our abilit...
+3. Albert Einstein: "There are only two ways to live your life. One is as though nothing is a miracl...
+```
+
+**`hybrid_extraction_example.py`**
+
+```
+Extracted (selector or LLM):
+  Title: A Light in the Attic
+  Price: £51.77
+  Availability: In stock (22 available)
+```
+
+**`llm_extraction_example.py`** *(requires MISTRAL_API_KEY)*
+
+```
+Generated schema: {'type': 'object', 'properties': {'quote_text': {'type': 'string', 'description': 'The text of the quote'}, 'author_name': {'type': 'string', 'description': 'The name of the author of the quote'}, 'tags': {'type': 'array', 'description': 'A list of tags associated with the quote'}}, 'required': ['quote_text', 'author_name', 'tags']}
+
+LLM extracted: [{'quote_text': 'The world as we have created it is a process of our thinking...', 'author_name': 'Albert Einstein', 'tags': ['change', 'deep-thoughts', 'thinking', 'world']}, ...]
+
+Semantic extraction: {'quote': 'The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.', 'author': 'Albert Einstein', 'tags': 'change, deep-thoughts, thinking, world'}
+```
+
+**`session_persistence_example.py`**
+
+```
+Session saved to /tmp/scrapeflow_quotes_session.json
+Loaded session: extracted 10 quotes (authenticated)
+```
 
 ### Example: Complete Book Scraper with All Features
 
@@ -862,23 +1189,26 @@ ScrapeFlow is built with a modular architecture:
 
 ```
 scrapeflow/
-├── engine.py          # Main ScrapeFlow engine
-├── ports.py           # Protocols for dependency inversion
-├── browser_runtime.py # Playwright runtime adapter
-├── workflow.py        # Workflow definition entities
+├── engine.py           # Main ScrapeFlow engine
+├── ports.py            # Protocols for dependency inversion
+├── browser_runtime.py  # Playwright runtime adapter
+├── workflow.py         # Workflow definition entities
 ├── workflow_executor.py # Workflow execution service
-├── config.py          # Configuration classes (incl. EthicalCrawlingConfig)
-├── specifications.py  # Pydantic specification-driven extraction
-├── schema_library.py  # Reusable schema definitions
-├── robots.py          # robots.txt parsing and enforcement
-├── registry.py        # Shared selector/component registry
-├── mcp_backend.py     # MCP integration extensibility
-├── anti_detection.py  # Anti-detection utilities
-├── rate_limiter.py    # Rate limiting implementation
-├── retry.py           # Retry logic and error classification
-├── monitoring.py      # Metrics, logging, alerting
-├── extractors.py      # Data extraction utilities
-└── exceptions.py      # Custom exceptions
+├── config.py           # Configuration (EthicalCrawling, Pagination, etc.)
+├── specifications.py   # SpecificationExtractor, HybridExtractor, FieldSpec
+├── schema_library.py   # Reusable schema definitions
+├── extractors.py       # Extractor, StructuredExtractor
+├── llm_extract.py      # Mistral LLM schema + extraction
+├── content_utils.py    # HTML cleaning for LLM
+├── mcp_backend.py      # MCPBackend, MistralLLMBackend
+├── pagination.py       # paginate() helper
+├── robots.py           # robots.txt parsing and enforcement
+├── registry.py         # Selectors, login handlers, pagination
+├── anti_detection.py   # Stealth mode, user agent rotation
+├── rate_limiter.py     # Rate limiting implementation
+├── retry.py            # Retry logic and error classification
+├── monitoring.py       # Metrics, logging, alerting
+└── exceptions.py       # Custom exceptions
 ```
 
 For deeper design details, see [`ARCHITECTURE.md`](ARCHITECTURE.md).

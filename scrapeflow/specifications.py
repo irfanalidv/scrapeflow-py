@@ -22,7 +22,7 @@ T = TypeVar("T", bound=BaseModel)
 class FieldSpec(BaseModel):
     """Declarative specification for a single extraction field."""
 
-    selector: str
+    selector: Union[str, List[str]]  # primary selector, or list [primary, fallback1, ...]
     type: str = "text"  # text, attribute, texts, html, json
     attribute: Optional[str] = None
     default: Optional[Any] = None
@@ -44,9 +44,12 @@ class ItemSpec(BaseModel):
 def _field_spec_to_extractor_args(spec: Union[str, FieldSpec]) -> Dict[str, Any]:
     """Convert FieldSpec or string to extractor arguments."""
     if isinstance(spec, str):
-        return {"selector": spec, "type": "text"}
+        return {"selector": spec, "selectors": [spec], "type": "text"}
+    sel = spec.selector
+    selectors = [sel] if isinstance(sel, str) else list(sel)
     return {
-        "selector": spec.selector,
+        "selector": selectors[0],
+        "selectors": selectors,
         "type": spec.type,
         "attribute": spec.attribute,
         "default": spec.default,
@@ -58,12 +61,39 @@ def _field_spec_to_extractor_args(spec: Union[str, FieldSpec]) -> Dict[str, Any]
     }
 
 
+async def _extract_one(
+    locator: Locator,
+    selector: str,
+    extract_type: str,
+    attribute: Optional[str],
+    fallback_attribute: Optional[str],
+    prefer_attribute: Optional[str],
+) -> Any:
+    """Extract value using a single selector."""
+    if extract_type == "text":
+        val = None
+        if prefer_attribute:
+            val = await Extractor.extract_attribute(locator, selector, prefer_attribute)
+        if val is None:
+            val = await Extractor.extract_text(locator, selector)
+        if not val and fallback_attribute:
+            val = await Extractor.extract_attribute(locator, selector, fallback_attribute)
+        return val
+    if extract_type == "texts":
+        return await Extractor.extract_texts(locator, selector)
+    if extract_type == "attribute":
+        return await Extractor.extract_attribute(locator, selector, attribute or "href")
+    if extract_type == "html":
+        return await Extractor.extract_html(locator, selector)
+    return await Extractor.extract_text(locator, selector)
+
+
 async def _extract_from_locator(
     locator: Locator, spec: Union[str, FieldSpec], base_url: Optional[str] = None
 ) -> Any:
-    """Extract value from a locator using field spec."""
+    """Extract value from a locator using field spec. Tries fallback selectors in order."""
     args = _field_spec_to_extractor_args(spec)
-    selector = args["selector"]
+    selectors = args.get("selectors", [args["selector"]])
     extract_type = args.get("type", "text")
     attribute = args.get("attribute")
     default = args.get("default")
@@ -73,48 +103,41 @@ async def _extract_from_locator(
     fallback_attribute = args.get("fallback_attribute")
     prefer_attribute = args.get("prefer_attribute")
 
-    try:
-        if extract_type == "text":
-            if prefer_attribute:
-                val = await Extractor.extract_attribute(locator, selector, prefer_attribute)
-            else:
-                val = None
-            if val is None:
-                val = await Extractor.extract_text(locator, selector)
-            if not val and fallback_attribute:
-                val = await Extractor.extract_attribute(locator, selector, fallback_attribute)
-        elif extract_type == "texts":
-            val = await Extractor.extract_texts(locator, selector)
-        elif extract_type == "attribute":
-            val = await Extractor.extract_attribute(
-                locator, selector, attribute or "href"
+    val = None
+    for selector in selectors:
+        try:
+            val = await _extract_one(
+                locator, selector, extract_type, attribute, fallback_attribute, prefer_attribute
             )
-        elif extract_type == "html":
-            val = await Extractor.extract_html(locator, selector)
-        else:
-            val = await Extractor.extract_text(locator, selector)
+            if val is not None and (val != "" if isinstance(val, str) else True):
+                if isinstance(val, list) and len(val) == 0:
+                    continue
+                break
+        except Exception:
+            continue
 
-        if isinstance(val, str):
-            if strip:
-                val = val.strip()
-            if normalize_whitespace:
-                val = re.sub(r"\s+", " ", val).strip()
-            if resolve_relative_url and base_url:
-                val = urljoin(base_url, val)
-
-        if isinstance(val, list) and normalize_whitespace:
-            normalized = []
-            for item in val:
-                if isinstance(item, str):
-                    s = item.strip() if strip else item
-                    normalized.append(re.sub(r"\s+", " ", s).strip())
-                else:
-                    normalized.append(item)
-            val = normalized
-
-        return val if val is not None else default
-    except Exception:
+    if val is None:
         return default
+
+    if isinstance(val, str):
+        if strip:
+            val = val.strip()
+        if normalize_whitespace:
+            val = re.sub(r"\s+", " ", val).strip()
+        if resolve_relative_url and base_url:
+            val = urljoin(base_url, val)
+
+    if isinstance(val, list) and normalize_whitespace:
+        normalized = []
+        for item in val:
+            if isinstance(item, str):
+                s = item.strip() if strip else item
+                normalized.append(re.sub(r"\s+", " ", s).strip())
+            else:
+                normalized.append(item)
+        val = normalized
+
+    return val if val is not None else default
 
 
 class SpecificationExtractor:
@@ -216,3 +239,82 @@ class TariffCodeSpec(BaseModel):
     code: str = Field(..., description="Tariff or classification code")
     description: str = Field(..., description="Regulatory text description")
     source: Optional[str] = Field(None, description="Source reference")
+
+
+def _schema_has_item_spec(schema: Dict[str, Any]) -> bool:
+    """Check if schema contains ItemSpec (list extraction)."""
+    return any(isinstance(v, ItemSpec) for v in schema.values())
+
+
+def _field_descriptions_from_model(
+    model: Type[T], schema: Dict[str, Union[str, FieldSpec, ItemSpec]]
+) -> Dict[str, str]:
+    """Build field_descriptions for LLM from model and schema (single fields only)."""
+    descriptions = {}
+    for key in schema:
+        if isinstance(schema[key], ItemSpec):
+            continue
+        field_info = model.model_fields.get(key)
+        desc = getattr(field_info, "description", None) if field_info else None
+        descriptions[key] = str(desc) if desc else key.replace("_", " ").title()
+    return descriptions
+
+
+class HybridExtractor:
+    """
+    Extract using selectors first, fall back to LLM when validation fails or result is empty.
+
+    Best of both worlds: fast selector-based extraction with self-healing via LLM.
+    Requires MISTRAL_API_KEY when LLM fallback is used.
+    """
+
+    def __init__(
+        self,
+        model: Type[T],
+        schema: Optional[Dict[str, Union[str, FieldSpec, ItemSpec]]] = None,
+        strict: bool = True,
+        mcp_backend: Optional[Any] = None,
+        use_llm_fallback: bool = True,
+    ):
+        self.spec_extractor = SpecificationExtractor(model=model, schema=schema, strict=strict)
+        self.schema = schema or {}
+        self.model = model
+        self.use_llm_fallback = use_llm_fallback
+        self._mcp = mcp_backend
+
+    def _get_mcp(self):
+        if self._mcp is not None:
+            return self._mcp
+        from scrapeflow.mcp_backend import create_mcp_backend
+        return create_mcp_backend("mistral")
+
+    async def extract(self, page: Page) -> T:
+        """Extract: try selectors first, fall back to LLM on failure."""
+        try:
+            result = await self.spec_extractor.extract(page)
+            # Skip fallback if we got valid result
+            if result is not None:
+                return result
+        except ScrapeFlowValidationError:
+            pass
+        except Exception:
+            if self.spec_extractor.strict:
+                raise
+            pass
+
+        if not self.use_llm_fallback or _schema_has_item_spec(self.schema):
+            raise ScrapeFlowValidationError(
+                f"Selector extraction failed for {self.model.__name__} and LLM fallback disabled or schema has ItemSpec"
+            )
+
+        mcp = self._get_mcp()
+        field_descriptions = _field_descriptions_from_model(self.model, self.schema)
+        if not field_descriptions:
+            raise ScrapeFlowValidationError(
+                f"No extractable fields for LLM fallback in {self.model.__name__}"
+            )
+
+        raw = await mcp.extract_with_semantics(
+            page, field_descriptions, context=f"Extract {self.model.__name__} fields."
+        )
+        return self.spec_extractor._validate(raw)

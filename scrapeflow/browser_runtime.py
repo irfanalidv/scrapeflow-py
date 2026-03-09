@@ -66,6 +66,10 @@ class PlaywrightBrowserRuntime:
             },
             "user_agent": self.anti_detection.get_user_agent(),
         }
+        if self.config.browser.storage_state_path:
+            import os
+            if os.path.exists(self.config.browser.storage_state_path):
+                context_options["storage_state"] = self.config.browser.storage_state_path
         self.context = await self.browser.new_context(**context_options)
         self._page = await self.context.new_page()
         await self.anti_detection.apply_stealth(self._page)
@@ -94,3 +98,9 @@ class PlaywrightBrowserRuntime:
         if not self._page:
             raise RuntimeError("Browser runtime is not started.")
         await self._page.goto(url, wait_until=wait_until, timeout=timeout)
+
+    async def save_storage_state(self, path: str) -> None:
+        """Save cookies and local storage to a JSON file for session persistence."""
+        if not self.context:
+            raise RuntimeError("Browser runtime is not started.")
+        await self.context.storage_state(path=path)
