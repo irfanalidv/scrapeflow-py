@@ -62,6 +62,24 @@ class BrowserConfig:
 
 
 @dataclass
+class EthicalCrawlingConfig:
+    """
+    Ethical crawling configuration—GDPR/CCPA baked into specification design.
+
+    Rate limiting, robots.txt respect, and compliance are built into the
+    specification layer, not retrofitted.
+    """
+
+    respect_robots_txt: bool = True
+    user_agent_for_robots: str = "ScrapeFlow"
+    max_pages_per_domain: Optional[int] = None
+    honor_noindex: bool = True
+    data_retention_days: Optional[int] = None  # GDPR: document retention
+    anonymize_ip: bool = False  # GDPR: minimize personal data
+    consent_required: bool = False  # GDPR: require consent for tracking
+
+
+@dataclass
 class ScrapeFlowConfig:
     """Main configuration for ScrapeFlow."""
 
@@ -69,6 +87,9 @@ class ScrapeFlowConfig:
     retry: RetryConfig = field(default_factory=RetryConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     anti_detection: AntiDetectionConfig = field(default_factory=AntiDetectionConfig)
+    ethical_crawling: EthicalCrawlingConfig = field(
+        default_factory=EthicalCrawlingConfig
+    )
     log_level: str = "INFO"
     log_file: Optional[str] = None
     debug: bool = False

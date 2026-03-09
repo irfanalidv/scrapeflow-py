@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="scrapeflow-py",
-    version="0.1.2",
+    version="0.2.0",
     author="Irfan Ali",
     description="An opinionated scraping workflow engine built on Playwright",
     long_description=long_description,
@@ -29,6 +29,7 @@ setup(
         "playwright>=1.40.0",
         "aiohttp>=3.9.0",
         "tenacity>=8.2.0",
+        "pydantic>=2.0.0",
     ],
     include_package_data=True,
 )

@@ -35,3 +35,9 @@ class ScrapeFlowValidationError(ScrapeFlowError):
 
     pass
 
+
+class ScrapeFlowRobotsDisallowedError(ScrapeFlowError):
+    """Raised when robots.txt disallows fetching the URL."""
+
+    pass
+

@@ -1,56 +1,66 @@
 """Main ScrapeFlow engine that orchestrates all components."""
 
 import asyncio
-import time
 from typing import Optional, Dict, Any, Callable
-from playwright.async_api import (
-    async_playwright,
-    Playwright,
-    Browser,
-    BrowserContext,
-    Page,
-)
+from playwright.async_api import Page
 
-from scrapeflow.config import (
-    ScrapeFlowConfig,
-    BrowserConfig,
-    RetryConfig,
-    RateLimitConfig,
-    AntiDetectionConfig,
-    BrowserType,
-)
+from scrapeflow.config import ScrapeFlowConfig
 from scrapeflow.anti_detection import AntiDetectionManager
 from scrapeflow.rate_limiter import RateLimiter
 from scrapeflow.retry import RetryHandler, ErrorClassifier
 from scrapeflow.monitoring import Logger, PerformanceMonitor
 from scrapeflow.workflow import Workflow, Step, WorkflowResult
+from scrapeflow.workflow_executor import WorkflowExecutor
+from scrapeflow.robots import RobotsChecker
+from scrapeflow.registry import LoginHandler
+from scrapeflow.browser_runtime import PlaywrightBrowserRuntime
+from scrapeflow.ports import (
+    RateLimiterPort,
+    RetryHandlerPort,
+    LoggerPort,
+    MonitorPort,
+    RobotsCheckerPort,
+    BrowserRuntimePort,
+)
 from scrapeflow.exceptions import (
     ScrapeFlowError,
     ScrapeFlowTimeoutError,
-    ScrapeFlowBlockedError,
+    ScrapeFlowRobotsDisallowedError,
 )
 
 
 class ScrapeFlow:
     """Main ScrapeFlow engine for web scraping workflows."""
 
-    def __init__(self, config: Optional[ScrapeFlowConfig] = None):
+    def __init__(
+        self,
+        config: Optional[ScrapeFlowConfig] = None,
+        *,
+        rate_limiter: Optional[RateLimiterPort] = None,
+        retry_handler: Optional[RetryHandlerPort] = None,
+        logger: Optional[LoggerPort] = None,
+        monitor: Optional[MonitorPort] = None,
+        robots_checker: Optional[RobotsCheckerPort] = None,
+        runtime: Optional[BrowserRuntimePort] = None,
+        workflow_executor: Optional[WorkflowExecutor] = None,
+    ):
         self.config = config or ScrapeFlowConfig()
-        self.playwright: Optional[Playwright] = None
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
 
         # Initialize components
         self.anti_detection = AntiDetectionManager(self.config.anti_detection)
-        self.rate_limiter = RateLimiter(self.config.rate_limit)
-        self.retry_handler = RetryHandler(self.config.retry)
-        self.logger = Logger(
-            name="scrapeflow",
-            level=self.config.log_level,
-            log_file=self.config.log_file,
+        self.rate_limiter = rate_limiter or RateLimiter(self.config.rate_limit)
+        self.retry_handler = retry_handler or RetryHandler(self.config.retry)
+        self.logger = logger or Logger(
+            name="scrapeflow", level=self.config.log_level, log_file=self.config.log_file
         )
-        self.monitor = PerformanceMonitor()
+        self.monitor = monitor or PerformanceMonitor()
+        self.robots_checker = robots_checker or RobotsChecker(
+            user_agent=self.config.ethical_crawling.user_agent_for_robots,
+            respect_robots=self.config.ethical_crawling.respect_robots_txt,
+        )
+        self.runtime = runtime or PlaywrightBrowserRuntime(self.config, self.anti_detection)
+        self.workflow_executor = workflow_executor or WorkflowExecutor()
 
         self._is_running = False
 
@@ -69,57 +79,8 @@ class ScrapeFlow:
             return
 
         self.logger.info("Starting ScrapeFlow engine...")
-        self.playwright = await async_playwright().start()
-
-        # Get browser type
-        browser_type_map = {
-            BrowserType.CHROMIUM: self.playwright.chromium,
-            BrowserType.FIREFOX: self.playwright.firefox,
-            BrowserType.WEBKIT: self.playwright.webkit,
-        }
-        browser_launcher = browser_type_map[self.config.browser.browser_type]
-
-        # Get proxy if configured
-        proxy = self.config.browser.proxy or self.anti_detection.get_proxy()
-
-        # Launch browser
-        browser_args = self.config.browser.args.copy()
-        if self.config.anti_detection.stealth_mode:
-            # Add stealth arguments
-            browser_args.extend(
-                [
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                    "--no-sandbox",
-                ]
-            )
-
-        self.browser = await browser_launcher.launch(
-            headless=self.config.browser.headless,
-            slow_mo=self.config.browser.slow_mo,
-            args=browser_args,
-            proxy=proxy,
-        )
-
-        # Create browser context
-        context_options = {
-            "viewport": {
-                "width": self.config.anti_detection.viewport_width,
-                "height": self.config.anti_detection.viewport_height,
-            },
-            "user_agent": self.anti_detection.get_user_agent(),
-        }
-
-        self.context = await self.browser.new_context(**context_options)
-
-        # Create page
-        self.page = await self.context.new_page()
-
-        # Apply stealth mode
-        await self.anti_detection.apply_stealth(self.page)
-
-        # Set default timeout
-        self.page.set_default_timeout(self.config.browser.timeout)
+        await self.runtime.start()
+        self.page = self.runtime.page
 
         self._is_running = True
         self.logger.info("ScrapeFlow engine started successfully")
@@ -130,37 +91,29 @@ class ScrapeFlow:
             return
 
         self.logger.info("Closing ScrapeFlow engine...")
-
-        if self.page:
-            await self.page.close()
-            self.page = None
-
-        if self.context:
-            await self.context.close()
-            self.context = None
-
-        if self.browser:
-            await self.browser.close()
-            self.browser = None
-
-        if self.playwright:
-            await self.playwright.stop()
-            self.playwright = None
+        await self.runtime.close()
+        self.page = None
 
         self._is_running = False
         self.logger.info("ScrapeFlow engine closed")
 
     async def navigate(self, url: str, wait_until: str = "load", timeout: Optional[int] = None):
-        """Navigate to a URL with rate limiting and retry logic."""
+        """Navigate to a URL with rate limiting, robots.txt check, and retry logic."""
         if not self._is_running:
             await self.start()
+
+        # Check robots.txt before navigating
+        if not await self.robots_checker.can_fetch(url):
+            self.logger.warning(f"robots.txt disallows: {url}")
+            raise ScrapeFlowRobotsDisallowedError(f"robots.txt disallows fetching: {url}")
 
         start_time = self.monitor.start_request()
 
         async def _navigate():
             await self.rate_limiter.acquire()
             timeout_ms = timeout or self.config.browser.timeout
-            await self.page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+            await self.runtime.goto(url, wait_until=wait_until, timeout=timeout_ms)
+            self.page = self.runtime.page
 
         try:
             await self.retry_handler.execute_with_retry(
@@ -199,6 +152,61 @@ class ScrapeFlow:
             await self.page.fill(selector, value, timeout=timeout_ms)
 
         await self.retry_handler.execute_with_retry(_fill)
+
+    async def login(
+        self,
+        login_url: str,
+        username: str,
+        password: str,
+        username_selector: str,
+        password_selector: str,
+        submit_selector: str,
+        success_selector: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        """
+        Perform a reusable login flow.
+
+        Returns True when login succeeds. If `success_selector` is provided,
+        success is verified by waiting for that selector.
+        """
+        if not self._is_running:
+            await self.start()
+
+        await self.navigate(login_url, timeout=timeout)
+        await self.fill(username_selector, username, timeout=timeout)
+        await self.fill(password_selector, password, timeout=timeout)
+        await self.click(submit_selector, timeout=timeout)
+
+        if success_selector:
+            try:
+                await self.wait_for_selector(success_selector, timeout=timeout)
+                return True
+            except Exception:
+                return False
+        return True
+
+    async def login_with_handler(
+        self,
+        login_url: str,
+        username: str,
+        password: str,
+        handler: LoginHandler,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        """
+        Perform login using a reusable LoginHandler component.
+        """
+        return await self.login(
+            login_url=login_url,
+            username=username,
+            password=password,
+            username_selector=handler.username_selector,
+            password_selector=handler.password_selector,
+            submit_selector=handler.submit_selector,
+            success_selector=handler.success_selector,
+            timeout=timeout,
+        )
 
     async def wait_for_selector(
         self, selector: str, timeout: Optional[int] = None, state: str = "visible"
@@ -273,7 +281,7 @@ class ScrapeFlow:
             await self.start()
 
         self.logger.info(f"Starting workflow: {workflow.name}")
-        result = await workflow.execute(self)
+        result = await self.workflow_executor.execute(workflow, self)
         self.logger.info(
             f"Workflow '{workflow.name}' completed. "
             f"Success: {result.success}, Steps: {len(result.steps_completed)}/{len(workflow.steps)}"

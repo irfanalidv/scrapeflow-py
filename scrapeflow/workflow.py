@@ -98,53 +98,9 @@ class Workflow:
         return self.context.get(key, default)
 
     async def execute(self, engine) -> WorkflowResult:
-        """Execute the workflow using the provided engine."""
-        steps_completed = []
-        steps_failed = []
-        final_data = None
-        
-        # Add engine (scraper) to context for step functions
-        self.context["scraper"] = engine
+        """Execute workflow through the dedicated executor service."""
+        from scrapeflow.workflow_executor import WorkflowExecutor
 
-        for step in self.steps:
-            if not step.should_execute(self.context):
-                continue
-
-            try:
-                # Execute step through engine
-                result = await engine.execute_step(step, self.context)
-                final_data = result
-                steps_completed.append(step.name)
-
-                # Call on_success callback if provided
-                if step.on_success:
-                    await engine._safe_call(step.on_success, result, self.context)
-
-            except Exception as e:
-                steps_failed.append(step.name)
-
-                # Call on_error callback if provided
-                if step.on_error:
-                    try:
-                        await engine._safe_call(step.on_error, e, self.context)
-                    except Exception:
-                        pass
-
-                # If step is required, stop workflow
-                if step.required:
-                    return WorkflowResult(
-                        success=False,
-                        steps_completed=steps_completed,
-                        steps_failed=steps_failed,
-                        context=self.context,
-                        error=e,
-                    )
-
-        return WorkflowResult(
-            success=len(steps_failed) == 0,
-            steps_completed=steps_completed,
-            steps_failed=steps_failed,
-            final_data=final_data,
-            context=self.context,
-        )
+        executor = WorkflowExecutor()
+        return await executor.execute(self, engine)
 

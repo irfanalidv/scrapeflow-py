@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Callable, Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
 from datetime import datetime
@@ -123,11 +123,34 @@ class Logger:
 
 
 class PerformanceMonitor:
-    """Monitors performance of scraping operations."""
+    """
+    Monitors performance of scraping operations.
 
-    def __init__(self):
+    Supports alerting on failure thresholds and automatic rollback triggers
+    for failed extraction runs.
+    """
+
+    def __init__(
+        self,
+        alert_on_failure_rate: Optional[float] = None,
+        alert_on_consecutive_failures: Optional[int] = None,
+        alert_callback: Optional[Callable[[ScrapeMetrics, str], None]] = None,
+        rollback_callback: Optional[Callable[[ScrapeMetrics], bool]] = None,
+    ):
+        """
+        Args:
+            alert_on_failure_rate: Alert if success rate drops below this (0-100).
+            alert_on_consecutive_failures: Alert after N consecutive failures.
+            alert_callback: Called when alert is triggered (metrics, reason).
+            rollback_callback: Called when rollback may be needed; return True to trigger.
+        """
         self.metrics = ScrapeMetrics()
         self.metrics.start_time = time.time()
+        self.alert_on_failure_rate = alert_on_failure_rate
+        self.alert_on_consecutive_failures = alert_on_consecutive_failures
+        self.alert_callback = alert_callback
+        self.rollback_callback = rollback_callback
+        self._consecutive_failures = 0
 
     def start_request(self):
         """Mark the start of a request."""
@@ -138,8 +161,35 @@ class PerformanceMonitor:
         duration = time.time() - start_time
         if success:
             self.metrics.record_success(duration)
+            self._consecutive_failures = 0
         else:
             self.metrics.record_failure(duration, error)
+            self._consecutive_failures += 1
+            self._check_alerts("consecutive_failures")
+        self._check_alerts("failure_rate")
+
+    def _check_alerts(self, reason: str):
+        """Check alert thresholds and invoke callbacks."""
+        if reason == "failure_rate" and self.alert_on_failure_rate is not None:
+            rate = self.metrics.get_success_rate()
+            if self.metrics.total_requests >= 5 and rate < self.alert_on_failure_rate:
+                if self.alert_callback:
+                    self.alert_callback(
+                        self.metrics,
+                        f"Success rate {rate:.1f}% below threshold {self.alert_on_failure_rate}%",
+                    )
+        if (
+            reason == "consecutive_failures"
+            and self.alert_on_consecutive_failures is not None
+            and self._consecutive_failures >= self.alert_on_consecutive_failures
+        ):
+            if self.alert_callback:
+                self.alert_callback(
+                    self.metrics,
+                    f"{self._consecutive_failures} consecutive failures",
+                )
+            if self.rollback_callback and self.rollback_callback(self.metrics):
+                pass  # Caller handles rollback logic
 
     def record_retry(self):
         """Record a retry."""
@@ -154,4 +204,5 @@ class PerformanceMonitor:
         """Reset metrics."""
         self.metrics = ScrapeMetrics()
         self.metrics.start_time = time.time()
+        self._consecutive_failures = 0
 

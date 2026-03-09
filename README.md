@@ -2,17 +2,7 @@
 
 **An opinionated scraping workflow engine built on Playwright**
 
-[![GitHub](https://img.shields.io/github/license/irfanalidv/scrapeflow-py)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE)
-
-[![PyPI](https://img.shields.io/pypi/v/scrapeflow-py)](https://pypi.org/project/scrapeflow-py/)
-
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/scrapeflow-py?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/scrapeflow-py)
-
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-
-[![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/)
-
-[![Status](https://img.shields.io/badge/status-active-success)](https://github.com/irfanalidv/scrapeflow-py)
+[![GitHub](https://img.shields.io/github/license/irfanalidv/scrapeflow-py)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/scrapeflow-py)](https://pypi.org/project/scrapeflow-py/) [![PyPI Downloads](https://static.pepy.tech/personalized-badge/scrapeflow-py?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/scrapeflow-py) [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/) [![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/) [![Status](https://img.shields.io/badge/status-active-success)](https://github.com/irfanalidv/scrapeflow-py)
 
 ---
 
@@ -20,6 +10,12 @@ ScrapeFlow is a production-ready Python library that transforms Playwright into 
 
 ## 🚀 Features
 
+- **📋 Specification-Driven Extraction**: Declarative Pydantic models define fields, types, and validation—decouple field definitions from page structure
+- **🤖 robots.txt Compliance**: Built-in robots.txt parsing and enforcement; ethical crawling by design
+- **⚖️ Ethical Crawling (GDPR/CCPA)**: Configurable data retention, anonymization, and consent options in the specification layer
+- **📦 Component Registry**: Shared, versioned selectors, pagination handlers, and login flows—platform thinking over one-off scrapers
+- **🔔 Monitoring & Alerting**: Alert callbacks on failure thresholds; rollback hooks for failed extraction runs
+- **🔌 MCP Extensibility**: Pluggable backends for Scrapy MCP Server, Playwright MCP, or LLM-based semantic extraction
 - **🔄 Intelligent Retry Logic**: Automatic retries with exponential backoff and jitter
 - **⚡ Rate Limiting**: Token bucket algorithm to respect server limits
 - **🕵️ Anti-Detection**: Stealth mode, user agent rotation, and proxy support
@@ -28,6 +24,10 @@ ScrapeFlow is a production-ready Python library that transforms Playwright into 
 - **🛠️ Data Extraction**: Powerful utilities for extracting structured data
 - **🔧 Error Handling**: Comprehensive error classification and recovery
 - **📝 Type Hints**: Full type support for better IDE experience
+
+<p align="center">
+  <img src="docs/scrapeflow-architecture.png" alt="ScrapeFlow Architecture" width="800">
+</p>
 
 ## 📦 Installation
 
@@ -379,6 +379,63 @@ config = ScrapeFlowConfig(
     ),
     log_level="INFO",  # Log important events
 )
+```
+
+### Specification-Driven Extraction (Pydantic)
+
+**Use Case:** Declarative extraction with validation—fields, types, and rules in specs, not fragile XPaths.
+
+```python
+from pydantic import BaseModel
+from scrapeflow import ScrapeFlow, SpecificationExtractor
+from scrapeflow.specifications import FieldSpec, ItemSpec, ProductPriceSpec
+
+# Model for list of products
+class BookListing(BaseModel):
+    books: list[ProductPriceSpec]
+
+# Schema maps fields to selectors
+schema = {
+    "books": ItemSpec(
+        items_selector="article.product_pod",
+        fields={
+            "title": FieldSpec(selector="h3 a"),
+            "price": FieldSpec(selector=".price_color"),
+            "availability": FieldSpec(selector=".instock.availability", default=""),
+            "url": FieldSpec(selector="h3 a", type="attribute", attribute="href"),
+        },
+    )
+}
+
+async with ScrapeFlow() as scraper:
+    await scraper.navigate("https://books.toscrape.com/")
+    extractor = SpecificationExtractor(BookListing, schema=schema)
+    # Extract and validate in one step
+    data = await extractor.extract(scraper.page)
+    for book in data.books:
+        print(f"{book.title}: {book.price}")
+```
+
+### Ethical Crawling & robots.txt
+
+**Use Case:** GDPR/CCPA compliance and robots.txt respect built into the specification layer.
+
+```python
+from scrapeflow import ScrapeFlow
+from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
+
+config = ScrapeFlowConfig(
+    ethical_crawling=EthicalCrawlingConfig(
+        respect_robots_txt=True,      # Check robots.txt before each request
+        user_agent_for_robots="ScrapeFlow",
+        anonymize_ip=True,            # GDPR: minimize personal data
+        data_retention_days=30,       # Document retention policy
+    )
+)
+
+async with ScrapeFlow(config) as scraper:
+    # navigate() automatically checks robots.txt
+    await scraper.navigate("https://example.com/page")
 ```
 
 ### Anti-Detection
@@ -806,15 +863,25 @@ ScrapeFlow is built with a modular architecture:
 ```
 scrapeflow/
 ├── engine.py          # Main ScrapeFlow engine
-├── workflow.py        # Workflow definition and execution
-├── config.py          # Configuration classes
+├── ports.py           # Protocols for dependency inversion
+├── browser_runtime.py # Playwright runtime adapter
+├── workflow.py        # Workflow definition entities
+├── workflow_executor.py # Workflow execution service
+├── config.py          # Configuration classes (incl. EthicalCrawlingConfig)
+├── specifications.py  # Pydantic specification-driven extraction
+├── schema_library.py  # Reusable schema definitions
+├── robots.py          # robots.txt parsing and enforcement
+├── registry.py        # Shared selector/component registry
+├── mcp_backend.py     # MCP integration extensibility
 ├── anti_detection.py  # Anti-detection utilities
 ├── rate_limiter.py    # Rate limiting implementation
 ├── retry.py           # Retry logic and error classification
-├── monitoring.py      # Metrics and logging
+├── monitoring.py      # Metrics, logging, alerting
 ├── extractors.py      # Data extraction utilities
 └── exceptions.py      # Custom exceptions
 ```
+
+For deeper design details, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## 🤝 Contributing
 

@@ -7,6 +7,7 @@ from scrapeflow.config import (
     RetryConfig,
     RateLimitConfig,
     AntiDetectionConfig,
+    EthicalCrawlingConfig,
     BrowserType,
 )
 
@@ -62,4 +63,16 @@ def test_scrapeflow_config():
     assert config.retry is not None
     assert config.rate_limit is not None
     assert config.anti_detection is not None
+    assert config.ethical_crawling is not None
+
+
+def test_ethical_crawling_config():
+    """Test EthicalCrawlingConfig for GDPR/CCPA compliance."""
+    config = EthicalCrawlingConfig(
+        respect_robots_txt=True,
+        user_agent_for_robots="ScrapeFlow",
+        anonymize_ip=True,
+    )
+    assert config.respect_robots_txt is True
+    assert config.anonymize_ip is True
 

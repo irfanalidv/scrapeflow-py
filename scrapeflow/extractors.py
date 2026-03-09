@@ -3,15 +3,18 @@
 from typing import Any, Dict, List, Optional, Union
 from playwright.async_api import Page, Locator
 
+# Page and Locator both have .locator() - support both for nested extraction
+PageOrLocator = Union[Page, Locator]
+
 
 class Extractor:
     """Base class for data extractors."""
 
     @staticmethod
-    async def extract_text(page: Page, selector: str) -> Optional[str]:
+    async def extract_text(page_or_locator: PageOrLocator, selector: str) -> Optional[str]:
         """Extract text from an element."""
         try:
-            element = page.locator(selector).first
+            element = page_or_locator.locator(selector).first
             if await element.count() > 0:
                 return await element.text_content()
             return None
@@ -19,10 +22,10 @@ class Extractor:
             return None
 
     @staticmethod
-    async def extract_texts(page: Page, selector: str) -> List[str]:
+    async def extract_texts(page_or_locator: PageOrLocator, selector: str) -> List[str]:
         """Extract text from multiple elements."""
         try:
-            elements = page.locator(selector)
+            elements = page_or_locator.locator(selector)
             count = await elements.count()
             texts = []
             for i in range(count):
@@ -35,11 +38,11 @@ class Extractor:
 
     @staticmethod
     async def extract_attribute(
-        page: Page, selector: str, attribute: str
+        page_or_locator: PageOrLocator, selector: str, attribute: str
     ) -> Optional[str]:
         """Extract an attribute value from an element."""
         try:
-            element = page.locator(selector).first
+            element = page_or_locator.locator(selector).first
             if await element.count() > 0:
                 return await element.get_attribute(attribute)
             return None
@@ -48,11 +51,11 @@ class Extractor:
 
     @staticmethod
     async def extract_attributes(
-        page: Page, selector: str, attribute: str
+        page_or_locator: PageOrLocator, selector: str, attribute: str
     ) -> List[str]:
         """Extract attribute values from multiple elements."""
         try:
-            elements = page.locator(selector)
+            elements = page_or_locator.locator(selector)
             count = await elements.count()
             attributes = []
             for i in range(count):
@@ -64,10 +67,10 @@ class Extractor:
             return []
 
     @staticmethod
-    async def extract_html(page: Page, selector: str) -> Optional[str]:
+    async def extract_html(page_or_locator: PageOrLocator, selector: str) -> Optional[str]:
         """Extract HTML content from an element."""
         try:
-            element = page.locator(selector).first
+            element = page_or_locator.locator(selector).first
             if await element.count() > 0:
                 return await element.inner_html()
             return None
