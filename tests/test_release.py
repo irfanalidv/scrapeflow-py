@@ -107,7 +107,7 @@ PAGE = b"""<html><head><title>Shelf</title></head><body>
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         if self.path == "/robots.txt":
             body, ctype = b"User-agent: *\nDisallow: /private\n", "text/plain"
         else:
