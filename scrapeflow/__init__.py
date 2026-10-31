@@ -57,7 +57,7 @@ from scrapeflow.workflow_executor import WorkflowExecutor
 try:
     __version__ = _pkg_version("scrapeflow-py")
 except PackageNotFoundError:  # running from a source checkout without installation
-    __version__ = "0.4.0"
+    __version__ = "0.5.0"
 
 __all__ = [
     "Extractor",

@@ -3,3 +3,4 @@ include LICENSE
 include CHANGELOG.md
 include scrapeflow/py.typed
 recursive-include examples *.py
+recursive-include examples/demo_site *.html *.txt

@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
+### Fixed
+- `Extractor.extract_table()` always returned `[]`: the coroutine from `Locator.all()` was never
+  awaited. It now returns one dict per data row.
+- `RobotsChecker.get_crawl_delay()` always returned `None`; it now returns the `Crawl-delay`
+  for the configured user agent.
+- Workflow steps with `retryable=True` (the default) were never retried, while the monitor
+  recorded a retry anyway. Steps that fail with a transient error (connection error, timeout,
+  `ScrapeFlowBlockedError`) are now re-run through the retry handler; when retries run out the
+  step fails with `ScrapeFlowRetryError` chaining the last error.
+- `PlaywrightBrowserRuntime.start()` leaked the Playwright driver and browser process when
+  launching failed part-way through.
+- `RateLimitConfig.requests_per_minute` was ignored whenever `requests_per_second` was set, which
+  is always the case with the defaults. When both are set, the slower limit now wins. The limiter
+  also uses a monotonic clock.
+- Creating several `ScrapeFlow` instances with `log_file` leaked file handles; old handlers are
+  now closed.
+- `timeout=0` (Playwright: no timeout) was silently replaced by the default timeout.
+- Errors swallowed by extractors, step conditions and login checks are now logged.
+
+### Changed
+- robots.txt fetch failures follow RFC 9309: a 4xx response allows everything (as before), but a
+  5xx response or a network error now disallows the site until the cache entry expires
+  (previously every failure allowed everything). `about:`, `data:` and `file:` URLs skip the
+  check. The robots.txt request now sends the configured robots user agent.
+- "Engine not started" errors raise `ScrapeFlowNotStartedError` (a subclass of both
+  `ScrapeFlowError` and `RuntimeError`, the two types raised before). A missing
+  `MISTRAL_API_KEY` raises `ScrapeFlowConfigurationError` (a `ValueError` subclass).
+- `SpecificationExtractor` and `HybridExtractor` are generic in the model type, so type checkers
+  know what `extract()` returns.
+- `StructuredExtractor` item schemas accept the dict form (`{"selector", "type", "attribute"}`)
+  and an `html` type.
+- Removed the unused `tenacity` dependency.
+- Examples rewritten: five offline recipes against a bundled demo site, all run by the tests.
+- README rewritten with verified snippets.
+
+### Added
+- `ScrapeFlowNotStartedError`, `ScrapeFlowConfigurationError`, `rate_limiter.effective_rate()`,
+  and a `fetch_timeout` option on `RobotsChecker`.
+- Tooling: ruff rules E, F, W, I, UP, B, SIM, C4, RUF, PTH, RET and PIE; `ruff format` replaces
+  black; mypy with `check_untyped_defs` passes; CodeQL workflow; pre-commit config; CI coverage
+  gate of 95% (suite at 96%, 94 tests).
+
 ## [0.4.0] - 2026-10-31
 
 ### Fixed
