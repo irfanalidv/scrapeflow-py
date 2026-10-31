@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2026-10-31
 
 ### Fixed
+- `.env` files are now looked up from the current working directory instead of the package install path.
 - `Extractor.extract_table()` always returned `[]`: the coroutine from `Locator.all()` was never
   awaited. It now returns one dict per data row.
 - `RobotsChecker.get_crawl_delay()` always returned `None`; it now returns the `Crawl-delay`
