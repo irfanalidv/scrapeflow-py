@@ -6,22 +6,34 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint:
+    name: Lint and type-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-      - name: Install lint tools
-        run: pip install "ruff>=0.6.0" "black>=24.0.0"
+          activate-environment: true
+      - name: Install
+        run: uv pip install -e ".[dev]"
       - name: Ruff check
         run: ruff check .
-      - name: Black check
-        run: black --check .
+      - name: Ruff format
+        run: ruff format --check .
+      - name: Mypy
+        run: mypy scrapeflow
 
   test:
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -29,29 +41,26 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-      - name: Install dependencies
+          activate-environment: true
+      - name: Install
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          uv pip install -e ".[dev]"
           playwright install --with-deps chromium
-      - name: Ruff
-        run: ruff check .
-      - name: Run tests
-        run: pytest -v
+      - name: Run tests with coverage
+        run: pytest --cov=scrapeflow --cov-report=term-missing --cov-fail-under=95
 
   docker:
+    name: Docker image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
