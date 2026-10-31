@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Member prices</title></head>
+  <body>
+    <h1>Member prices</h1>
+    <div id="content"><p class="notice">Log in to see member prices.</p></div>
+    <script>
+      if (document.cookie.includes("member_session=")) {
+        document.getElementById("content").innerHTML =
+          '<ul id="member-prices">' +
+          '<li><span class="title">Signals and Noise</span> <span class="price">£33.60</span></li>' +
+          '<li><span class="title">The Cartographer\'s Daughter</span> <span class="price">£25.44</span></li>' +
+          '</ul>';
+      }
+    </script>
+  </body>
+</html>

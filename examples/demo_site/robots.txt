@@ -1,0 +1,4 @@
+# Demo site robots.txt: the admin area is off limits, and polite crawlers wait 1s.
+User-agent: *
+Disallow: /admin/
+Crawl-delay: 1
