@@ -1,57 +1,22 @@
-# ScrapeFlow - Production-ready scraping workflow engine
-# Multi-stage build for smaller image
-FROM python:3.11-slim as builder
+# ScrapeFlow - Playwright scraping workflow engine
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Browsers must be installed to the same path Playwright looks in at runtime
+ENV PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip wheel --no-cache-dir --no-deps -w /wheels -r requirements.txt
+# Install the package (and test tools, so the default CMD works)
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY scrapeflow ./scrapeflow
+RUN pip install --no-cache-dir . "pytest>=7.4.0" "pytest-asyncio>=0.23.0"
 
-# Final stage
-FROM python:3.11-slim
+# Chromium plus its system dependencies
+RUN playwright install --with-deps chromium
 
-WORKDIR /app
-
-# Install Playwright system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy wheels from builder
-COPY --from=builder /wheels /wheels
-COPY requirements.txt .
-RUN pip install --no-cache /wheels/* && rm -rf /wheels
-
-# Copy application
-COPY . .
-RUN pip install -e .
-
-# Install Playwright browsers (Chromium only for smaller image)
-RUN playwright install chromium
-RUN playwright install-deps chromium
-
-ENV PYTHONUNBUFFERED=1
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+COPY tests ./tests
+COPY examples ./examples
 
 # Default: run tests (override for custom extraction jobs)
 CMD ["pytest", "tests/", "-v", "--tb=short"]

@@ -1,8 +1,9 @@
 """Workflow engine for defining and executing scraping workflows."""
 
-from typing import Callable, Any, Optional, Dict, List
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class StepStatus(str, Enum):
@@ -22,15 +23,15 @@ class Step:
     name: str
     func: Callable
     args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: dict[str, Any] = field(default_factory=dict)
     retryable: bool = True
     required: bool = True
-    on_success: Optional[Callable] = None
-    on_error: Optional[Callable] = None
-    condition: Optional[Callable] = None
-    timeout: Optional[float] = None
+    on_success: Callable | None = None
+    on_error: Callable | None = None
+    condition: Callable | None = None
+    timeout: float | None = None
 
-    def should_execute(self, context: Dict[str, Any]) -> bool:
+    def should_execute(self, context: dict[str, Any]) -> bool:
         """Check if step should be executed based on condition."""
         if self.condition is None:
             return True
@@ -45,11 +46,11 @@ class WorkflowResult:
     """Result of a workflow execution."""
 
     success: bool
-    steps_completed: List[str]
-    steps_failed: List[str]
+    steps_completed: list[str]
+    steps_failed: list[str]
     final_data: Any = None
-    context: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[Exception] = None
+    context: dict[str, Any] = field(default_factory=dict)
+    error: Exception | None = None
 
 
 class Workflow:
@@ -57,8 +58,8 @@ class Workflow:
 
     def __init__(self, name: str = "default"):
         self.name = name
-        self.steps: List[Step] = []
-        self.context: Dict[str, Any] = {}
+        self.steps: list[Step] = []
+        self.context: dict[str, Any] = {}
 
     def add_step(
         self,
@@ -67,10 +68,10 @@ class Workflow:
         *args,
         retryable: bool = True,
         required: bool = True,
-        on_success: Optional[Callable] = None,
-        on_error: Optional[Callable] = None,
-        condition: Optional[Callable] = None,
-        timeout: Optional[float] = None,
+        on_success: Callable | None = None,
+        on_error: Callable | None = None,
+        condition: Callable | None = None,
+        timeout: float | None = None,
         **kwargs,
     ) -> "Workflow":
         """Add a step to the workflow."""
@@ -103,4 +104,3 @@ class Workflow:
 
         executor = WorkflowExecutor()
         return await executor.execute(self, engine)
-

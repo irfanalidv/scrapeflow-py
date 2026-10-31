@@ -1,6 +1,5 @@
 """Tests for content cleaning utilities."""
 
-import pytest
 from scrapeflow.content_utils import clean_html_for_llm, html_to_plain_text
 
 

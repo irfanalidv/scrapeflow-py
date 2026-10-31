@@ -7,13 +7,10 @@ layer so compliance is built-in, not retrofitted.
 
 import asyncio
 import time
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import aiohttp
-
-from scrapeflow.exceptions import ScrapeFlowError
 
 
 class RobotsChecker:
@@ -88,7 +85,7 @@ class RobotsChecker:
             self._cache[base] = (rp, now)
             return rp.can_fetch(self.user_agent, url)
 
-    async def get_crawl_delay(self, url: str) -> Optional[float]:
+    async def get_crawl_delay(self, url: str) -> float | None:
         """
         Get Crawl-delay in seconds if specified in robots.txt.
 

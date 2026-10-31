@@ -1,21 +1,15 @@
 """Retry logic and error recovery utilities."""
 
 import asyncio
-import random
 import logging
-from typing import Callable, Any, Optional, Type, Tuple
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    Retrying,
-    RetryError,
-)
+import random
+from collections.abc import Callable
+from typing import Any
+
 from scrapeflow.config import RetryConfig
 from scrapeflow.exceptions import (
-    ScrapeFlowRetryError,
     ScrapeFlowBlockedError,
+    ScrapeFlowRetryError,
     ScrapeFlowTimeoutError,
 )
 
@@ -39,7 +33,7 @@ class RetryHandler:
         self,
         func: Callable,
         *args,
-        retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
+        retryable_exceptions: tuple[type[Exception], ...] | None = None,
         **kwargs,
     ) -> Any:
         """Execute a function with retry logic."""
@@ -55,9 +49,7 @@ class RetryHandler:
                     return func(*args, **kwargs)
             except retryable as e:
                 if attempt == max_retries:
-                    logger.error(
-                        f"Max retries ({max_retries}) exceeded for {func.__name__}"
-                    )
+                    logger.error(f"Max retries ({max_retries}) exceeded for {func.__name__}")
                     raise ScrapeFlowRetryError(
                         f"Operation failed after {max_retries} retries: {str(e)}",
                         retry_count=attempt,
@@ -66,8 +58,7 @@ class RetryHandler:
 
                 # Calculate delay with exponential backoff
                 delay = min(
-                    self.config.initial_delay
-                    * (self.config.exponential_base ** attempt),
+                    self.config.initial_delay * (self.config.exponential_base**attempt),
                     self.config.max_delay,
                 )
                 delay = self._add_jitter(delay)
@@ -118,7 +109,7 @@ class ErrorClassifier:
         return False
 
     @staticmethod
-    def get_retry_delay(error: Exception) -> Optional[float]:
+    def get_retry_delay(error: Exception) -> float | None:
         """Get suggested retry delay for an error."""
         if isinstance(error, ScrapeFlowBlockedError):
             return error.retry_after
@@ -129,4 +120,3 @@ class ErrorClassifier:
                 return float(error.headers["Retry-After"])
 
         return None
-

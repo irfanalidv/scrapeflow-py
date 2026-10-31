@@ -10,16 +10,16 @@ Demonstrates:
 """
 
 import asyncio
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 from scrapeflow import ScrapeFlow, SpecificationExtractor
 from scrapeflow.config import (
-    ScrapeFlowConfig,
     EthicalCrawlingConfig,
     RateLimitConfig,
+    ScrapeFlowConfig,
 )
 from scrapeflow.specifications import FieldSpec, ItemSpec, JobListingSpec
-from scrapeflow.registry import get_registry, register_job_listing_schema
 
 
 class JobListingsPage(BaseModel):
@@ -73,7 +73,9 @@ async def scrape_job_listings():
             print(f"  {i+1}. {job.title[:50]}... | {job.company or 'N/A'}")
 
         metrics = scraper.get_metrics()
-        print(f"\nMetrics: {metrics.total_requests} requests, {metrics.get_success_rate():.1f}% success")
+        print(
+            f"\nMetrics: {metrics.total_requests} requests, {metrics.get_success_rate():.1f}% success"
+        )
 
 
 if __name__ == "__main__":

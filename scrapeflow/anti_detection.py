@@ -1,7 +1,7 @@
 """Anti-detection utilities for web scraping."""
 
 import random
-from typing import List, Optional, Dict
+
 from scrapeflow.config import AntiDetectionConfig
 
 
@@ -18,7 +18,7 @@ class UserAgentRotator:
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ]
 
-    def __init__(self, user_agents: Optional[List[str]] = None):
+    def __init__(self, user_agents: list[str] | None = None):
         self.user_agents = user_agents or self.DEFAULT_USER_AGENTS
 
     def get_random(self) -> str:
@@ -35,11 +35,11 @@ class UserAgentRotator:
 class ProxyRotator:
     """Manages proxy rotation."""
 
-    def __init__(self, proxies: List[Dict[str, str]]):
+    def __init__(self, proxies: list[dict[str, str]]):
         self.proxies = proxies
         self.current_index = 0
 
-    def get_next(self) -> Optional[Dict[str, str]]:
+    def get_next(self) -> dict[str, str] | None:
         """Get the next proxy in rotation."""
         if not self.proxies:
             return None
@@ -47,7 +47,7 @@ class ProxyRotator:
         self.current_index += 1
         return proxy
 
-    def get_random(self) -> Optional[Dict[str, str]]:
+    def get_random(self) -> dict[str, str] | None:
         """Get a random proxy."""
         if not self.proxies:
             return None
@@ -61,52 +61,42 @@ class StealthMode:
     async def apply_stealth(page):
         """Apply stealth techniques to a Playwright page."""
         # Remove webdriver property
-        await page.add_init_script(
-            """
+        await page.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
-            """
-        )
+            """)
 
         # Override permissions
-        await page.add_init_script(
-            """
+        await page.add_init_script("""
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (
                 parameters.name === 'notifications' ?
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters)
             );
-            """
-        )
+            """)
 
         # Override plugins
-        await page.add_init_script(
-            """
+        await page.add_init_script("""
             Object.defineProperty(navigator, 'plugins', {
                 get: () => [1, 2, 3, 4, 5]
             });
-            """
-        )
+            """)
 
         # Override languages
-        await page.add_init_script(
-            """
+        await page.add_init_script("""
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en']
             });
-            """
-        )
+            """)
 
         # Mock chrome object
-        await page.add_init_script(
-            """
+        await page.add_init_script("""
             window.chrome = {
                 runtime: {}
             };
-            """
-        )
+            """)
 
 
 class AntiDetectionManager:
@@ -117,17 +107,15 @@ class AntiDetectionManager:
         self.user_agent_rotator = (
             UserAgentRotator(config.user_agents) if config.rotate_user_agents else None
         )
-        self.proxy_rotator = (
-            ProxyRotator(config.proxies) if config.rotate_proxies else None
-        )
+        self.proxy_rotator = ProxyRotator(config.proxies) if config.rotate_proxies else None
 
-    def get_user_agent(self) -> Optional[str]:
+    def get_user_agent(self) -> str | None:
         """Get a user agent if rotation is enabled."""
         if self.user_agent_rotator:
             return self.user_agent_rotator.get_random()
         return None
 
-    def get_proxy(self) -> Optional[Dict[str, str]]:
+    def get_proxy(self) -> dict[str, str] | None:
         """Get a proxy if rotation is enabled."""
         if self.proxy_rotator:
             return self.proxy_rotator.get_next()
@@ -137,4 +125,3 @@ class AntiDetectionManager:
         """Apply stealth mode to a page if enabled."""
         if self.config.stealth_mode:
             await StealthMode.apply_stealth(page)
-

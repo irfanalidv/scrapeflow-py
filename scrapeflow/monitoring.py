@@ -2,10 +2,10 @@
 
 import logging
 import time
-from typing import Callable, Dict, Any, List, Optional
-from dataclasses import dataclass, field
 from collections import defaultdict
-from datetime import datetime
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -18,9 +18,9 @@ class ScrapeMetrics:
     retry_count: int = 0
     total_duration: float = 0.0
     average_response_time: float = 0.0
-    errors_by_type: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
+    errors_by_type: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    start_time: float | None = None
+    end_time: float | None = None
 
     def record_success(self, duration: float):
         """Record a successful request."""
@@ -53,7 +53,7 @@ class ScrapeMetrics:
             return 0.0
         return (self.successful_requests / self.total_requests) * 100
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert metrics to dictionary."""
         return {
             "total_requests": self.total_requests,
@@ -74,7 +74,7 @@ class Logger:
         self,
         name: str = "scrapeflow",
         level: str = "INFO",
-        log_file: Optional[str] = None,
+        log_file: str | None = None,
     ):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(getattr(logging, level.upper()))
@@ -132,10 +132,10 @@ class PerformanceMonitor:
 
     def __init__(
         self,
-        alert_on_failure_rate: Optional[float] = None,
-        alert_on_consecutive_failures: Optional[int] = None,
-        alert_callback: Optional[Callable[[ScrapeMetrics, str], None]] = None,
-        rollback_callback: Optional[Callable[[ScrapeMetrics], bool]] = None,
+        alert_on_failure_rate: float | None = None,
+        alert_on_consecutive_failures: int | None = None,
+        alert_callback: Callable[[ScrapeMetrics, str], None] | None = None,
+        rollback_callback: Callable[[ScrapeMetrics], bool] | None = None,
     ):
         """
         Args:
@@ -156,7 +156,7 @@ class PerformanceMonitor:
         """Mark the start of a request."""
         return time.time()
 
-    def end_request(self, start_time: float, success: bool, error: Optional[Exception] = None):
+    def end_request(self, start_time: float, success: bool, error: Exception | None = None):
         """Mark the end of a request and record metrics."""
         duration = time.time() - start_time
         if success:
@@ -205,4 +205,3 @@ class PerformanceMonitor:
         self.metrics = ScrapeMetrics()
         self.metrics.start_time = time.time()
         self._consecutive_failures = 0
-

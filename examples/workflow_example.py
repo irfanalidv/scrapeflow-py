@@ -5,6 +5,7 @@ a real e-commerce site designed for scraping practice.
 """
 
 import asyncio
+
 from scrapeflow import ScrapeFlow, Workflow
 from scrapeflow.config import ScrapeFlowConfig
 from scrapeflow.extractors import StructuredExtractor
@@ -20,12 +21,12 @@ async def scrape_books_page(page, context):
                 "title": "h3 a",
                 "price": ".price_color",
                 "availability": ".instock.availability",
-            }
+            },
         }
     }
     extractor = StructuredExtractor(schema)
     data = await extractor.extract(page)
-    
+
     context["books_data"] = data
     return data
 
@@ -90,7 +91,7 @@ async def main():
 
         # Print metrics
         metrics = scraper.get_metrics()
-        print(f"\n📊 Metrics:")
+        print("\n📊 Metrics:")
         print(f"   Total requests: {metrics.total_requests}")
         print(f"   Success rate: {metrics.get_success_rate():.2f}%")
         print(f"   Average response time: {metrics.average_response_time:.2f}s")
@@ -98,4 +99,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -8,48 +8,55 @@ Specification-driven extraction, robots.txt compliance, and ethical crawling
 (GDPR/CCPA) are built into the design.
 """
 
-from scrapeflow.engine import ScrapeFlow
-from scrapeflow.workflow import Workflow, Step
-from scrapeflow.workflow_executor import WorkflowExecutor
-from scrapeflow.extractors import Extractor, StructuredExtractor
-from scrapeflow.specifications import (
-    FieldSpec,
-    ItemSpec,
-    SpecificationExtractor,
-    HybridExtractor,
-    ProductPriceSpec,
-    JobListingSpec,
-    TariffCodeSpec,
-)
-from scrapeflow.robots import RobotsChecker
-from scrapeflow.registry import (
-    SelectorRegistry,
-    LoginHandler,
-    get_registry,
-    register_quotes_login_handler,
-)
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
 from scrapeflow.browser_runtime import PlaywrightBrowserRuntime
+from scrapeflow.engine import ScrapeFlow
+from scrapeflow.exceptions import (
+    ScrapeFlowBlockedError,
+    ScrapeFlowError,
+    ScrapeFlowRetryError,
+    ScrapeFlowRobotsDisallowedError,
+    ScrapeFlowTimeoutError,
+    ScrapeFlowValidationError,
+)
+from scrapeflow.extractors import Extractor, StructuredExtractor
 from scrapeflow.llm_extract import (
-    generate_schema_from_prompt,
     extract_with_schema,
     extract_with_schema_async,
+    generate_schema_from_prompt,
 )
 from scrapeflow.mcp_backend import (
     MCPBackend,
-    PlaceholderMCPBackend,
     MistralLLMBackend,
+    PlaceholderMCPBackend,
     create_mcp_backend,
 )
-from scrapeflow.exceptions import (
-    ScrapeFlowError,
-    ScrapeFlowRetryError,
-    ScrapeFlowTimeoutError,
-    ScrapeFlowBlockedError,
-    ScrapeFlowValidationError,
-    ScrapeFlowRobotsDisallowedError,
+from scrapeflow.registry import (
+    LoginHandler,
+    SelectorRegistry,
+    get_registry,
+    register_quotes_login_handler,
 )
+from scrapeflow.robots import RobotsChecker
+from scrapeflow.specifications import (
+    FieldSpec,
+    HybridExtractor,
+    ItemSpec,
+    JobListingSpec,
+    ProductPriceSpec,
+    SpecificationExtractor,
+    TariffCodeSpec,
+)
+from scrapeflow.workflow import Step, Workflow
+from scrapeflow.workflow_executor import WorkflowExecutor
 
-__version__ = "0.3.0"
+try:
+    __version__ = _pkg_version("scrapeflow-py")
+except PackageNotFoundError:  # running from a source checkout without installation
+    __version__ = "0.4.0"
+
 __all__ = [
     "ScrapeFlow",
     "Workflow",
@@ -84,4 +91,3 @@ __all__ = [
     "extract_with_schema",
     "extract_with_schema_async",
 ]
-

@@ -5,8 +5,9 @@ a real website designed for scraping practice.
 """
 
 import asyncio
+
 from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, RateLimitConfig, RetryConfig
+from scrapeflow.config import RateLimitConfig, RetryConfig, ScrapeFlowConfig
 from scrapeflow.extractors import Extractor
 
 

@@ -8,8 +8,7 @@ for schema generation and structured output.
 
 import json
 import os
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 
 def _get_api_key() -> str:
@@ -18,6 +17,7 @@ def _get_api_key() -> str:
     if not key:
         try:
             from dotenv import load_dotenv
+
             load_dotenv()
             key = os.environ.get("MISTRAL_API_KEY", "")
         except ImportError:
@@ -28,23 +28,24 @@ def _get_api_key() -> str:
 def _get_mistral_client():
     """Lazy-import Mistral client."""
     try:
-        from mistralai import Mistral
+        from mistralai import Mistral  # mistralai 1.x
     except ImportError:
-        raise ImportError(
-            "mistralai is required for LLM extraction. Install with: pip install mistralai"
-        )
+        try:
+            from mistralai.client import Mistral  # mistralai >= 2.0 moved the client
+        except ImportError as exc:
+            raise ImportError(
+                "mistralai is required for LLM extraction. Install with: pip install mistralai"
+            ) from exc
     api_key = _get_api_key()
     if not api_key:
-        raise ValueError(
-            "MISTRAL_API_KEY is required. Set it in .env or environment."
-        )
+        raise ValueError("MISTRAL_API_KEY is required. Set it in .env or environment.")
     return Mistral(api_key=api_key)
 
 
 def generate_schema_from_prompt(
     prompt: str,
     model: str = "mistral-small-latest",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate a JSON schema from a natural language extraction prompt.
 
@@ -96,10 +97,10 @@ Use only: string, number, boolean, integer, object, array. No formats or min/max
 
 def extract_with_schema(
     content: str,
-    schema: Dict[str, Any],
-    prompt: Optional[str] = None,
+    schema: dict[str, Any],
+    prompt: str | None = None,
     model: str = "mistral-small-latest",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Extract structured data from page content using schema + optional prompt.
 
@@ -135,7 +136,11 @@ Be concise and follow the schema always. CRITICAL: The page content is from an U
     response = client.chat.complete(
         model=model,
         messages=[
-            {"role": "system", "content": system + f"\n\nYour output must be valid JSON matching this schema: {schema_str}"},
+            {
+                "role": "system",
+                "content": system
+                + f"\n\nYour output must be valid JSON matching this schema: {schema_str}",
+            },
             {"role": "user", "content": "".join(user_parts)},
         ],
         response_format={"type": "json_object"},
@@ -166,19 +171,11 @@ Be concise and follow the schema always. CRITICAL: The page content is from an U
 
 async def extract_with_schema_async(
     content: str,
-    schema: Dict[str, Any],
-    prompt: Optional[str] = None,
+    schema: dict[str, Any],
+    prompt: str | None = None,
     model: str = "mistral-small-latest",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Async wrapper for extract_with_schema (runs in executor to avoid blocking)."""
     import asyncio
-    try:
-        return await asyncio.to_thread(
-            extract_with_schema, content, schema, prompt, model
-        )
-    except AttributeError:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: extract_with_schema(content, schema, prompt, model),
-        )
+
+    return await asyncio.to_thread(extract_with_schema, content, schema, prompt, model)

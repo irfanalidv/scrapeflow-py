@@ -8,6 +8,7 @@ Demonstrates:
 """
 
 import asyncio
+
 from pydantic import BaseModel
 
 from scrapeflow import (
@@ -16,7 +17,7 @@ from scrapeflow import (
     get_registry,
     register_quotes_login_handler,
 )
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
+from scrapeflow.config import EthicalCrawlingConfig, ScrapeFlowConfig
 from scrapeflow.specifications import FieldSpec, ItemSpec
 
 

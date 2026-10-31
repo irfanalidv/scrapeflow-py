@@ -1,14 +1,13 @@
 """Tests for configuration classes."""
 
-import pytest
 from scrapeflow.config import (
-    ScrapeFlowConfig,
-    BrowserConfig,
-    RetryConfig,
-    RateLimitConfig,
     AntiDetectionConfig,
-    EthicalCrawlingConfig,
+    BrowserConfig,
     BrowserType,
+    EthicalCrawlingConfig,
+    RateLimitConfig,
+    RetryConfig,
+    ScrapeFlowConfig,
 )
 
 
@@ -75,4 +74,3 @@ def test_ethical_crawling_config():
     )
     assert config.respect_robots_txt is True
     assert config.anonymize_ip is True
-

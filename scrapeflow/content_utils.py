@@ -5,7 +5,6 @@ Strips noise (scripts, styles) and normalizes text before LLM or validation.
 """
 
 import re
-from typing import Optional
 
 
 def clean_html_for_llm(html: str, max_chars: int = 120000) -> str:

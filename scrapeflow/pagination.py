@@ -5,7 +5,8 @@ Control max_pages, max_results, and max_wait_time for multi-page crawls.
 """
 
 import time
-from typing import Any, AsyncIterator, Callable, Optional
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from scrapeflow.registry import PaginationHandler
 
@@ -15,7 +16,7 @@ async def paginate(
     base_url: str,
     handler: PaginationHandler,
     extract_func: Callable,
-    config: Optional[Any] = None,
+    config: Any | None = None,
 ) -> AsyncIterator[Any]:
     """
     Paginate through pages, yielding extracted data per page.
@@ -30,7 +31,10 @@ async def paginate(
     Yields:
         Extracted data from each page
     """
-    config = config or type("Config", (), {"max_pages": 100, "max_results": None, "max_wait_time": None})()
+    config = (
+        config
+        or type("Config", (), {"max_pages": 100, "max_results": None, "max_wait_time": None})()
+    )
     max_pages = getattr(config, "max_pages", 100)
     max_results = getattr(config, "max_results", None)
     max_wait_time = getattr(config, "max_wait_time", None)
@@ -78,4 +82,5 @@ async def paginate(
             break
 
         from urllib.parse import urljoin
+
         url = urljoin(url, href)

@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "scrapeflow-py"
+abstract: "Opinionated Playwright scraping workflow engine with retries, rate limiting, robots.txt compliance, and spec-driven and LLM extraction."
+authors:
+  - family-names: Ali
+    given-names: Irfan
+version: "0.4.0"
+date-released: "2026-10-31"
+license: MIT
+repository-code: "https://github.com/irfanalidv/scrapeflow-py"
+url: "https://pypi.org/project/scrapeflow-py/"

@@ -7,14 +7,14 @@ best practices for decoupling field definitions from page structure.
 """
 
 import re
+from typing import Any, TypeVar
 from urllib.parse import urljoin
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union
+
+from playwright.async_api import Locator, Page
 from pydantic import BaseModel, Field, field_validator
-from playwright.async_api import Page, Locator
 
-from scrapeflow.extractors import Extractor
 from scrapeflow.exceptions import ScrapeFlowValidationError
-
+from scrapeflow.extractors import Extractor
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -22,26 +22,26 @@ T = TypeVar("T", bound=BaseModel)
 class FieldSpec(BaseModel):
     """Declarative specification for a single extraction field."""
 
-    selector: Union[str, List[str]]  # primary selector, or list [primary, fallback1, ...]
+    selector: str | list[str]  # primary selector, or list [primary, fallback1, ...]
     type: str = "text"  # text, attribute, texts, html, json
-    attribute: Optional[str] = None
-    default: Optional[Any] = None
+    attribute: str | None = None
+    default: Any | None = None
     required: bool = False
     normalize_whitespace: bool = True
     strip: bool = True
     resolve_relative_url: bool = False
-    fallback_attribute: Optional[str] = None
-    prefer_attribute: Optional[str] = None
+    fallback_attribute: str | None = None
+    prefer_attribute: str | None = None
 
 
 class ItemSpec(BaseModel):
     """Specification for extracting a list of items."""
 
     items_selector: str
-    fields: Dict[str, Union[str, FieldSpec]]  # field name -> selector/spec
+    fields: dict[str, str | FieldSpec]  # field name -> selector/spec
 
 
-def _field_spec_to_extractor_args(spec: Union[str, FieldSpec]) -> Dict[str, Any]:
+def _field_spec_to_extractor_args(spec: str | FieldSpec) -> dict[str, Any]:
     """Convert FieldSpec or string to extractor arguments."""
     if isinstance(spec, str):
         return {"selector": spec, "selectors": [spec], "type": "text"}
@@ -65,9 +65,9 @@ async def _extract_one(
     locator: Locator,
     selector: str,
     extract_type: str,
-    attribute: Optional[str],
-    fallback_attribute: Optional[str],
-    prefer_attribute: Optional[str],
+    attribute: str | None,
+    fallback_attribute: str | None,
+    prefer_attribute: str | None,
 ) -> Any:
     """Extract value using a single selector."""
     if extract_type == "text":
@@ -89,7 +89,7 @@ async def _extract_one(
 
 
 async def _extract_from_locator(
-    locator: Locator, spec: Union[str, FieldSpec], base_url: Optional[str] = None
+    locator: Locator, spec: str | FieldSpec, base_url: str | None = None
 ) -> Any:
     """Extract value from a locator using field spec. Tries fallback selectors in order."""
     args = _field_spec_to_extractor_args(spec)
@@ -150,8 +150,8 @@ class SpecificationExtractor:
 
     def __init__(
         self,
-        model: Type[T],
-        schema: Optional[Dict[str, Union[str, FieldSpec, ItemSpec]]] = None,
+        model: type[T],
+        schema: dict[str, str | FieldSpec | ItemSpec] | None = None,
         strict: bool = True,
     ):
         """
@@ -170,9 +170,9 @@ class SpecificationExtractor:
         raw = await self._extract_raw(page)
         return self._validate(raw)
 
-    async def _extract_raw(self, page: Page) -> Dict[str, Any]:
+    async def _extract_raw(self, page: Page) -> dict[str, Any]:
         """Extract raw data from page using schema."""
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
 
         for key, spec in self.schema.items():
             if isinstance(spec, ItemSpec):
@@ -193,7 +193,7 @@ class SpecificationExtractor:
 
         return result
 
-    def _validate(self, raw: Dict[str, Any]) -> T:
+    def _validate(self, raw: dict[str, Any]) -> T:
         """Validate raw data against Pydantic model."""
         try:
             return self.model.model_validate(raw)
@@ -211,8 +211,8 @@ class ProductPriceSpec(BaseModel):
 
     title: str = Field(..., description="Product title")
     price: str = Field(..., description="Price string")
-    availability: Optional[str] = Field(None, description="Stock status")
-    url: Optional[str] = Field(None, description="Product URL")
+    availability: str | None = Field(None, description="Stock status")
+    url: str | None = Field(None, description="Product URL")
 
     @field_validator("price", mode="before")
     @classmethod
@@ -227,10 +227,10 @@ class JobListingSpec(BaseModel):
     """Reusable spec for job listing extraction."""
 
     title: str = Field(..., description="Job title")
-    company: Optional[str] = Field(None, description="Company name")
-    location: Optional[str] = Field(None, description="Job location")
-    url: Optional[str] = Field(None, description="Job URL")
-    description: Optional[str] = Field(None, description="Job description snippet")
+    company: str | None = Field(None, description="Company name")
+    location: str | None = Field(None, description="Job location")
+    url: str | None = Field(None, description="Job URL")
+    description: str | None = Field(None, description="Job description snippet")
 
 
 class TariffCodeSpec(BaseModel):
@@ -238,17 +238,17 @@ class TariffCodeSpec(BaseModel):
 
     code: str = Field(..., description="Tariff or classification code")
     description: str = Field(..., description="Regulatory text description")
-    source: Optional[str] = Field(None, description="Source reference")
+    source: str | None = Field(None, description="Source reference")
 
 
-def _schema_has_item_spec(schema: Dict[str, Any]) -> bool:
+def _schema_has_item_spec(schema: dict[str, Any]) -> bool:
     """Check if schema contains ItemSpec (list extraction)."""
     return any(isinstance(v, ItemSpec) for v in schema.values())
 
 
 def _field_descriptions_from_model(
-    model: Type[T], schema: Dict[str, Union[str, FieldSpec, ItemSpec]]
-) -> Dict[str, str]:
+    model: type[T], schema: dict[str, str | FieldSpec | ItemSpec]
+) -> dict[str, str]:
     """Build field_descriptions for LLM from model and schema (single fields only)."""
     descriptions = {}
     for key in schema:
@@ -270,10 +270,10 @@ class HybridExtractor:
 
     def __init__(
         self,
-        model: Type[T],
-        schema: Optional[Dict[str, Union[str, FieldSpec, ItemSpec]]] = None,
+        model: type[T],
+        schema: dict[str, str | FieldSpec | ItemSpec] | None = None,
         strict: bool = True,
-        mcp_backend: Optional[Any] = None,
+        mcp_backend: Any | None = None,
         use_llm_fallback: bool = True,
     ):
         self.spec_extractor = SpecificationExtractor(model=model, schema=schema, strict=strict)
@@ -286,6 +286,7 @@ class HybridExtractor:
         if self._mcp is not None:
             return self._mcp
         from scrapeflow.mcp_backend import create_mcp_backend
+
         return create_mcp_backend("mistral")
 
     async def extract(self, page: Page) -> T:

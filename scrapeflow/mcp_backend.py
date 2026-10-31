@@ -9,7 +9,7 @@ using semantic extraction backends.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 from playwright.async_api import Page
 
@@ -30,9 +30,9 @@ class MCPBackend(ABC):
     async def extract_with_semantics(
         self,
         page: Page,
-        field_descriptions: Dict[str, str],
-        context: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        field_descriptions: dict[str, str],
+        context: str | None = None,
+    ) -> dict[str, Any]:
         """
         Extract data using semantic/LLM understanding of field descriptions.
 
@@ -50,7 +50,7 @@ class MCPBackend(ABC):
     @abstractmethod
     async def detect_layout_change(
         self, page: Page, expected_selectors: list[str]
-    ) -> Dict[str, bool]:
+    ) -> dict[str, bool]:
         """
         Detect if page layout has changed (selectors no longer match).
 
@@ -70,8 +70,8 @@ class MCPBackend(ABC):
         self,
         page: Page,
         failed_selectors: list[str],
-        field_descriptions: Dict[str, str],
-    ) -> Optional[Dict[str, str]]:
+        field_descriptions: dict[str, str],
+    ) -> dict[str, str] | None:
         """
         Suggest new selectors when layout has changed.
 
@@ -99,15 +99,15 @@ class PlaceholderMCPBackend(MCPBackend):
     async def extract_with_semantics(
         self,
         page: Page,
-        field_descriptions: Dict[str, str],
-        context: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        field_descriptions: dict[str, str],
+        context: str | None = None,
+    ) -> dict[str, Any]:
         """No-op; override with real MCP/LLM integration."""
         return {}
 
     async def detect_layout_change(
         self, page: Page, expected_selectors: list[str]
-    ) -> Dict[str, bool]:
+    ) -> dict[str, bool]:
         """Basic check: locator.count() > 0."""
         result = {}
         for sel in expected_selectors:
@@ -122,8 +122,8 @@ class PlaceholderMCPBackend(MCPBackend):
         self,
         page: Page,
         failed_selectors: list[str],
-        field_descriptions: Dict[str, str],
-    ) -> Optional[Dict[str, str]]:
+        field_descriptions: dict[str, str],
+    ) -> dict[str, str] | None:
         """No-op; real implementation would call MCP tools."""
         return None
 
@@ -142,12 +142,12 @@ class MistralLLMBackend(MCPBackend):
     async def extract_with_semantics(
         self,
         page: Page,
-        field_descriptions: Dict[str, str],
-        context: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        field_descriptions: dict[str, str],
+        context: str | None = None,
+    ) -> dict[str, Any]:
         """Extract using LLM: get page content, clean for LLM, build schema, call Mistral."""
-        from scrapeflow.llm_extract import extract_with_schema_async
         from scrapeflow.content_utils import clean_html_for_llm
+        from scrapeflow.llm_extract import extract_with_schema_async
 
         # Get page content
         content = await Extractor.extract_text(page, "body")
@@ -160,20 +160,17 @@ class MistralLLMBackend(MCPBackend):
         schema = {
             "type": "object",
             "properties": {
-                k: {"type": "string", "description": v}
-                for k, v in field_descriptions.items()
+                k: {"type": "string", "description": v} for k, v in field_descriptions.items()
             },
             "required": list(field_descriptions.keys()),
         }
 
         prompt = context or "Extract the following fields from the page content."
-        return await extract_with_schema_async(
-            content, schema, prompt=prompt, model=self.model
-        )
+        return await extract_with_schema_async(content, schema, prompt=prompt, model=self.model)
 
     async def detect_layout_change(
         self, page: Page, expected_selectors: list[str]
-    ) -> Dict[str, bool]:
+    ) -> dict[str, bool]:
         """Basic selector presence check."""
         result = {}
         for sel in expected_selectors:
@@ -188,8 +185,8 @@ class MistralLLMBackend(MCPBackend):
         self,
         page: Page,
         failed_selectors: list[str],
-        field_descriptions: Dict[str, str],
-    ) -> Optional[Dict[str, str]]:
+        field_descriptions: dict[str, str],
+    ) -> dict[str, str] | None:
         """Use LLM to suggest new selectors from page HTML."""
         from scrapeflow.llm_extract import extract_with_schema_async
 
@@ -227,4 +224,17 @@ def create_mcp_backend(backend_type: str = "placeholder", **kwargs) -> MCPBacken
         return PlaceholderMCPBackend()
     if backend_type == "mistral":
         return MistralLLMBackend(model=kwargs.get("model", "mistral-small-latest"))
-    return PlaceholderMCPBackend()
+    if backend_type in ("scrapy_mcp", "playwright_mcp"):
+        import warnings
+
+        warnings.warn(
+            f"MCP backend {backend_type!r} is not implemented yet; using PlaceholderMCPBackend "
+            "(extraction returns no data). Subclass MCPBackend to plug in your own server.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return PlaceholderMCPBackend()
+    raise ValueError(
+        f"Unknown MCP backend {backend_type!r}. "
+        "Expected 'placeholder', 'mistral', 'scrapy_mcp' or 'playwright_mcp'."
+    )

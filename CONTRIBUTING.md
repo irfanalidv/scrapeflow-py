@@ -16,7 +16,7 @@ ScrapeFlow is MIT-licensed. When contributing:
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/scrapeflow-py.git`
 3. Create a virtual environment: `python -m venv venv`
 4. Activate it: `source venv/bin/activate` (Linux/Mac) or `venv\Scripts\activate` (Windows)
-5. Install dependencies: `pip install -r requirements-dev.txt`
+5. Install dependencies: `pip install -e ".[dev]"` and `playwright install chromium`
 6. Install Playwright browsers: `playwright install`
 
 ## Development Setup
@@ -29,10 +29,10 @@ pip install -e .
 pytest
 
 # Format code
-black scrapeflow/
+black .
 
 # Lint code
-ruff check scrapeflow/
+ruff check .
 
 # Type checking
 mypy scrapeflow/

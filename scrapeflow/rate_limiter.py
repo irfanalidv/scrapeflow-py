@@ -2,8 +2,7 @@
 
 import asyncio
 import time
-from typing import Optional
-from collections import deque
+
 from scrapeflow.config import RateLimitConfig
 
 
@@ -60,18 +59,14 @@ class AdaptiveRateLimiter(RateLimiter):
 
     def backoff(self):
         """Increase wait time when rate limited."""
-        self.current_rate = max(
-            self.min_rate, self.current_rate / self.backoff_factor
-        )
+        self.current_rate = max(self.min_rate, self.current_rate / self.backoff_factor)
         self.refill_rate = 1.0 / self.current_rate
 
     def speed_up(self):
         """Gradually increase rate when successful."""
-        original_rate = (
-            self.config.requests_per_second
-            or (60.0 / self.config.requests_per_minute if self.config.requests_per_minute else 1.0)
+        original_rate = self.config.requests_per_second or (
+            60.0 / self.config.requests_per_minute if self.config.requests_per_minute else 1.0
         )
         if self.current_rate < original_rate:
             self.current_rate = min(original_rate, self.current_rate * 1.1)
             self.refill_rate = 1.0 / self.current_rate
-

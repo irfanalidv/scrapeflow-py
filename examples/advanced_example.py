@@ -1,14 +1,15 @@
 """Advanced example showing anti-detection, rate limiting, and structured extraction."""
 
 import asyncio
+
 from scrapeflow import ScrapeFlow
 from scrapeflow.config import (
-    ScrapeFlowConfig,
     AntiDetectionConfig,
     RateLimitConfig,
     RetryConfig,
+    ScrapeFlowConfig,
 )
-from scrapeflow.extractors import StructuredExtractor, Extractor
+from scrapeflow.extractors import Extractor, StructuredExtractor
 
 
 async def main():
@@ -65,8 +66,7 @@ async def main():
         # Extract tags separately using Extractor for each quote
         quotes_with_tags = []
         quote_elements = scraper.page.locator(".quote")
-        count = await quote_elements.count()
-        
+
         for i, quote_data in enumerate(data.get("quotes", [])[:5]):  # First 5
             quote_elem = quote_elements.nth(i)
             tags = await Extractor.extract_texts(quote_elem, ".tag")
@@ -84,7 +84,7 @@ async def main():
 
         # Get metrics
         metrics = scraper.get_metrics()
-        print(f"\nScraping completed:")
+        print("\nScraping completed:")
         print(f"  Success rate: {metrics.get_success_rate():.2f}%")
         print(f"  Total requests: {metrics.total_requests}")
         print(f"  Retries: {metrics.retry_count}")
@@ -92,4 +92,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

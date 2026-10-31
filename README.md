@@ -1,8 +1,21 @@
+<div align="center">
+
 # ScrapeFlow
 
-**An opinionated scraping workflow engine built on Playwright**
+**An opinionated scraping workflow engine built on Playwright.**
 
-[![GitHub](https://img.shields.io/github/license/irfanalidv/scrapeflow-py)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/scrapeflow-py)](https://pypi.org/project/scrapeflow-py/) [![PyPI Downloads](https://static.pepy.tech/personalized-badge/scrapeflow-py?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/scrapeflow-py) [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/) [![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/) [![Status](https://img.shields.io/badge/status-active-success)](https://github.com/irfanalidv/scrapeflow-py)
+Retries, rate limiting, anti-detection, robots.txt compliance, Pydantic spec-driven and
+Mistral LLM-powered extraction, login sessions, workflows, and metrics in one async API.
+
+[![PyPI version](https://img.shields.io/pypi/v/scrapeflow-py.svg)](https://pypi.org/project/scrapeflow-py/)
+[![Python versions](https://img.shields.io/pypi/pyversions/scrapeflow-py.svg)](https://pypi.org/project/scrapeflow-py/)
+[![CI](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/ci.yml/badge.svg)](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/ci.yml)
+[![PyPI Downloads](https://static.pepy.tech/badge/scrapeflow-py)](https://pepy.tech/projects/scrapeflow-py)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/)
+
+</div>
 
 ---
 
@@ -15,7 +28,7 @@ ScrapeFlow is a production-ready Python library that transforms Playwright into 
 - **⚖️ Ethical Crawling (GDPR/CCPA)**: Configurable data retention, anonymization, and consent options in the specification layer
 - **📦 Component Registry**: Shared, versioned selectors, pagination handlers, and login flows—platform thinking over one-off scrapers
 - **🔔 Monitoring & Alerting**: Alert callbacks on failure thresholds; rollback hooks for failed extraction runs
-- **🔌 MCP Extensibility**: Pluggable backends for Scrapy MCP Server, Playwright MCP, or LLM-based semantic extraction
+- **🔌 Pluggable Extraction Backends**: `MCPBackend` interface with a built-in Mistral LLM backend; subclass it to plug in an MCP server (Scrapy/Playwright MCP adapters are planned, not yet implemented)
 - **🤖 Mistral LLM Extraction**: Generate schemas from natural language, extract without selectors—uses `MISTRAL_API_KEY`
 - **🔄 Hybrid Extraction**: Selector-first, LLM fallback when validation fails—self-healing spiders
 - **🛡️ Selector Fallback Chain**: Try multiple selectors per field (`[".price", ".cost"]`) for resilience
@@ -31,13 +44,16 @@ ScrapeFlow is a production-ready Python library that transforms Playwright into 
 - **📝 Type Hints**: Full type support for better IDE experience
 
 <p align="center">
-  <img src="docs/scrapeflow-architecture.png" alt="ScrapeFlow Architecture" width="800">
+  <img src="https://raw.githubusercontent.com/irfanalidv/scrapeflow-py/main/docs/scrapeflow-architecture.png" alt="ScrapeFlow Architecture" width="800">
 </p>
 
 ## 📦 Installation
 
+Requires Python 3.10+.
+
 ```bash
 pip install scrapeflow-py
+playwright install chromium   # download the browser Playwright drives
 ```
 
 Or install from source:
@@ -46,17 +62,24 @@ Or install from source:
 git clone https://github.com/irfanalidv/scrapeflow-py.git
 cd scrapeflow-py
 pip install -e .
+playwright install chromium
 ```
 
-**Note**: After installation, install Playwright browsers:
+On a fresh Linux machine or container, `playwright install --with-deps chromium` also installs
+the system libraries Chromium needs. A `Dockerfile` is included.
 
-```bash
-playwright install
-```
+## ⚙️ Configuration (environment variables)
+
+| Variable | Purpose |
+| --- | --- |
+| `MISTRAL_API_KEY` | Required only for LLM features (`generate_schema_from_prompt`, `extract_with_schema`, `MistralLLMBackend`, `HybridExtractor` LLM fallback). Read from the environment or a `.env` file. |
+
+Everything else (rate limits, retries, browser, anti-detection, robots.txt, ethical crawling) is
+configured in code via `ScrapeFlowConfig`; see [Configuration](#configuration) below.
 
 ## 🎯 Real-World Use Cases
 
-ScrapeFlow is used in production for:
+Typical use cases:
 
 - **💰 E-commerce Price Monitoring** - Track competitor prices, monitor deals, and optimize pricing strategies
 - **📰 News & Content Aggregation** - Collect articles from multiple sources for content platforms
@@ -1211,11 +1234,20 @@ scrapeflow/
 └── exceptions.py       # Custom exceptions
 ```
 
-For deeper design details, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For deeper design details, see [`ARCHITECTURE.md`](https://github.com/irfanalidv/scrapeflow-py/blob/main/ARCHITECTURE.md). Release notes are in [`CHANGELOG.md`](https://github.com/irfanalidv/scrapeflow-py/blob/main/CHANGELOG.md).
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! See [CONTRIBUTING.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/CONTRIBUTING.md)
+and the [Code of Conduct](https://github.com/irfanalidv/scrapeflow-py/blob/main/CODE_OF_CONDUCT.md).
+
+```bash
+git clone https://github.com/irfanalidv/scrapeflow-py.git && cd scrapeflow-py
+pip install -e ".[dev]" && playwright install chromium
+ruff check . && black --check . && pytest
+```
+
+Security issues: please follow [SECURITY.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/SECURITY.md).
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
@@ -1225,7 +1257,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 

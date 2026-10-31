@@ -1,7 +1,6 @@
 """Configuration and settings for ScrapeFlow."""
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
 from enum import Enum
 
 
@@ -22,9 +21,7 @@ class RetryConfig:
     max_delay: float = 60.0
     exponential_base: float = 2.0
     jitter: bool = True
-    retryable_exceptions: tuple = (
-        Exception,
-    )  # Will be customized per use case
+    retryable_exceptions: tuple = (Exception,)  # Will be customized per use case
 
 
 @dataclass
@@ -32,7 +29,7 @@ class RateLimitConfig:
     """Configuration for rate limiting."""
 
     requests_per_second: float = 1.0
-    requests_per_minute: Optional[float] = None
+    requests_per_minute: float | None = None
     burst_size: int = 5
 
 
@@ -45,8 +42,8 @@ class AntiDetectionConfig:
     stealth_mode: bool = True
     viewport_width: int = 1920
     viewport_height: int = 1080
-    user_agents: List[str] = field(default_factory=list)
-    proxies: List[Dict[str, str]] = field(default_factory=list)
+    user_agents: list[str] = field(default_factory=list)
+    proxies: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -57,9 +54,9 @@ class BrowserConfig:
     headless: bool = True
     timeout: int = 30000  # milliseconds
     slow_mo: int = 0  # milliseconds
-    args: List[str] = field(default_factory=list)
-    proxy: Optional[Dict[str, str]] = None
-    storage_state_path: Optional[str] = None  # Load cookies/session from file on start
+    args: list[str] = field(default_factory=list)
+    proxy: dict[str, str] | None = None
+    storage_state_path: str | None = None  # Load cookies/session from file on start
 
 
 @dataclass
@@ -71,8 +68,8 @@ class PaginationConfig:
     """
 
     max_pages: int = 100
-    max_results: Optional[int] = None
-    max_wait_time: Optional[float] = None  # seconds
+    max_results: int | None = None
+    max_wait_time: float | None = None  # seconds
     auto_paginate: bool = True
 
 
@@ -87,9 +84,9 @@ class EthicalCrawlingConfig:
 
     respect_robots_txt: bool = True
     user_agent_for_robots: str = "ScrapeFlow"
-    max_pages_per_domain: Optional[int] = None
+    max_pages_per_domain: int | None = None
     honor_noindex: bool = True
-    data_retention_days: Optional[int] = None  # GDPR: document retention
+    data_retention_days: int | None = None  # GDPR: document retention
     anonymize_ip: bool = False  # GDPR: minimize personal data
     consent_required: bool = False  # GDPR: require consent for tracking
 
@@ -102,10 +99,7 @@ class ScrapeFlowConfig:
     retry: RetryConfig = field(default_factory=RetryConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     anti_detection: AntiDetectionConfig = field(default_factory=AntiDetectionConfig)
-    ethical_crawling: EthicalCrawlingConfig = field(
-        default_factory=EthicalCrawlingConfig
-    )
+    ethical_crawling: EthicalCrawlingConfig = field(default_factory=EthicalCrawlingConfig)
     log_level: str = "INFO"
-    log_file: Optional[str] = None
+    log_file: str | None = None
     debug: bool = False
-

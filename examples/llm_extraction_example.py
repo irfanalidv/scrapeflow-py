@@ -15,13 +15,14 @@ import os
 # Load .env if available
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
 from scrapeflow import ScrapeFlow, create_mcp_backend
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
-from scrapeflow.llm_extract import generate_schema_from_prompt, extract_with_schema
+from scrapeflow.config import EthicalCrawlingConfig, ScrapeFlowConfig
+from scrapeflow.llm_extract import extract_with_schema, generate_schema_from_prompt
 
 
 async def run_llm_extraction():
@@ -38,15 +39,11 @@ async def run_llm_extraction():
         await scraper.navigate("https://quotes.toscrape.com/")
 
         # Option 1: Generate schema from prompt
-        schema = generate_schema_from_prompt(
-            "Extract quote text, author name, and list of tags"
-        )
+        schema = generate_schema_from_prompt("Extract quote text, author name, and list of tags")
         print("Generated schema:", schema)
 
         # Option 2: Extract using schema + page content
-        content = await scraper.page.evaluate(
-            "() => document.body.innerText"
-        )
+        content = await scraper.page.evaluate("() => document.body.innerText")
         data = extract_with_schema(
             content,
             schema,

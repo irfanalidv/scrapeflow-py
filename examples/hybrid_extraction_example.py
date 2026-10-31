@@ -11,17 +11,18 @@ Requires MISTRAL_API_KEY in .env for LLM fallback.
 
 import asyncio
 import os
-from typing import Optional
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
 from pydantic import BaseModel, Field
-from scrapeflow import ScrapeFlow, HybridExtractor, SpecificationExtractor
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
+
+from scrapeflow import HybridExtractor, ScrapeFlow
+from scrapeflow.config import EthicalCrawlingConfig, ScrapeFlowConfig
 from scrapeflow.specifications import FieldSpec
 
 
@@ -30,7 +31,7 @@ class ProductSpec(BaseModel):
 
     title: str = Field(..., description="Product title")
     price: str = Field(..., description="Price string")
-    availability: Optional[str] = Field(None, description="Stock status")
+    availability: str | None = Field(None, description="Stock status")
 
 
 async def run_hybrid_example():
@@ -47,7 +48,9 @@ async def run_hybrid_example():
     }
 
     async with ScrapeFlow(config) as scraper:
-        await scraper.navigate("https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html")
+        await scraper.navigate(
+            "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
+        )
 
         # Use HybridExtractor: selectors first, LLM fallback if validation fails
         use_llm = bool(os.environ.get("MISTRAL_API_KEY"))

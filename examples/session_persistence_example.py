@@ -10,10 +10,16 @@ import asyncio
 import os
 import tempfile
 
-from scrapeflow import ScrapeFlow, SpecificationExtractor, get_registry, register_quotes_login_handler
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig, BrowserConfig
-from scrapeflow.specifications import FieldSpec, ItemSpec
 from pydantic import BaseModel
+
+from scrapeflow import (
+    ScrapeFlow,
+    SpecificationExtractor,
+    get_registry,
+    register_quotes_login_handler,
+)
+from scrapeflow.config import BrowserConfig, EthicalCrawlingConfig, ScrapeFlowConfig
+from scrapeflow.specifications import FieldSpec, ItemSpec
 
 
 class QuoteItem(BaseModel):

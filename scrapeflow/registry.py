@@ -5,10 +5,10 @@ Move beyond one-off scrapers: selectors and handlers are versioned, tested,
 and reusable across extraction jobs.
 """
 
-from typing import Any, Dict, Optional
 from dataclasses import dataclass
+from typing import Any
 
-from scrapeflow.schema_library import product_price_item_spec, job_listing_item_spec
+from scrapeflow.schema_library import job_listing_item_spec, product_price_item_spec
 
 
 @dataclass
@@ -18,7 +18,7 @@ class SelectorComponent:
     name: str
     selector: str
     type: str = "text"  # text, attribute, texts, html
-    attribute: Optional[str] = None
+    attribute: str | None = None
     description: str = ""
     version: str = "1.0"
 
@@ -29,7 +29,7 @@ class PaginationHandler:
 
     name: str
     next_selector: str
-    has_next: Optional[str] = None  # selector that indicates more pages
+    has_next: str | None = None  # selector that indicates more pages
     max_pages: int = 100
     description: str = ""
     version: str = "1.0"
@@ -43,7 +43,7 @@ class LoginHandler:
     username_selector: str
     password_selector: str
     submit_selector: str
-    success_selector: Optional[str] = None
+    success_selector: str | None = None
     description: str = ""
     version: str = "1.0"
 
@@ -57,17 +57,17 @@ class SelectorRegistry:
     """
 
     def __init__(self):
-        self._selectors: Dict[str, SelectorComponent] = {}
-        self._pagination: Dict[str, PaginationHandler] = {}
-        self._login: Dict[str, LoginHandler] = {}
-        self._schemas: Dict[str, Dict[str, Any]] = {}
+        self._selectors: dict[str, SelectorComponent] = {}
+        self._pagination: dict[str, PaginationHandler] = {}
+        self._login: dict[str, LoginHandler] = {}
+        self._schemas: dict[str, dict[str, Any]] = {}
 
     def register_selector(
         self,
         name: str,
         selector: str,
         type: str = "text",
-        attribute: Optional[str] = None,
+        attribute: str | None = None,
         description: str = "",
         version: str = "1.0",
     ) -> "SelectorRegistry":
@@ -86,7 +86,7 @@ class SelectorRegistry:
         self,
         name: str,
         next_selector: str,
-        has_next: Optional[str] = None,
+        has_next: str | None = None,
         max_pages: int = 100,
         description: str = "",
         version: str = "1.0",
@@ -108,7 +108,7 @@ class SelectorRegistry:
         username_selector: str,
         password_selector: str,
         submit_selector: str,
-        success_selector: Optional[str] = None,
+        success_selector: str | None = None,
         description: str = "",
         version: str = "1.0",
     ) -> "SelectorRegistry":
@@ -124,24 +124,24 @@ class SelectorRegistry:
         )
         return self
 
-    def register_schema(self, name: str, schema: Dict[str, Any]) -> "SelectorRegistry":
+    def register_schema(self, name: str, schema: dict[str, Any]) -> "SelectorRegistry":
         """Register a reusable extraction schema."""
         self._schemas[name] = schema
         return self
 
-    def get_selector(self, name: str) -> Optional[SelectorComponent]:
+    def get_selector(self, name: str) -> SelectorComponent | None:
         """Get a registered selector by name."""
         return self._selectors.get(name)
 
-    def get_pagination(self, name: str) -> Optional[PaginationHandler]:
+    def get_pagination(self, name: str) -> PaginationHandler | None:
         """Get a registered pagination handler by name."""
         return self._pagination.get(name)
 
-    def get_login(self, name: str) -> Optional[LoginHandler]:
+    def get_login(self, name: str) -> LoginHandler | None:
         """Get a registered login handler by name."""
         return self._login.get(name)
 
-    def get_schema(self, name: str) -> Optional[Dict[str, Any]]:
+    def get_schema(self, name: str) -> dict[str, Any] | None:
         """Get a registered schema by name."""
         return self._schemas.get(name)
 
@@ -164,19 +164,19 @@ def get_registry() -> SelectorRegistry:
 
 
 # Pre-built specification libraries for common data types
-def register_product_price_schema(registry: Optional[SelectorRegistry] = None) -> None:
+def register_product_price_schema(registry: SelectorRegistry | None = None) -> None:
     """Register the product/price schema to the registry."""
     reg = registry or _default_registry
     reg.register_schema("product_price", {"products": product_price_item_spec()})
 
 
-def register_job_listing_schema(registry: Optional[SelectorRegistry] = None) -> None:
+def register_job_listing_schema(registry: SelectorRegistry | None = None) -> None:
     """Register the job listing schema to the registry."""
     reg = registry or _default_registry
     reg.register_schema("job_listing", {"jobs": job_listing_item_spec()})
 
 
-def register_quotes_login_handler(registry: Optional[SelectorRegistry] = None) -> None:
+def register_quotes_login_handler(registry: SelectorRegistry | None = None) -> None:
     """Register a reusable login handler for quotes.toscrape.com."""
     reg = registry or _default_registry
     reg.register_login(

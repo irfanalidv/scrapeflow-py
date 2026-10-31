@@ -1,17 +1,18 @@
 """Data extraction utilities and helpers."""
 
-from typing import Any, Dict, List, Optional, Union
-from playwright.async_api import Page, Locator
+from typing import Any
+
+from playwright.async_api import Locator, Page
 
 # Page and Locator both have .locator() - support both for nested extraction
-PageOrLocator = Union[Page, Locator]
+PageOrLocator = Page | Locator
 
 
 class Extractor:
     """Base class for data extractors."""
 
     @staticmethod
-    async def extract_text(page_or_locator: PageOrLocator, selector: str) -> Optional[str]:
+    async def extract_text(page_or_locator: PageOrLocator, selector: str) -> str | None:
         """Extract text from an element."""
         try:
             element = page_or_locator.locator(selector).first
@@ -22,7 +23,7 @@ class Extractor:
             return None
 
     @staticmethod
-    async def extract_texts(page_or_locator: PageOrLocator, selector: str) -> List[str]:
+    async def extract_texts(page_or_locator: PageOrLocator, selector: str) -> list[str]:
         """Extract text from multiple elements."""
         try:
             elements = page_or_locator.locator(selector)
@@ -39,7 +40,7 @@ class Extractor:
     @staticmethod
     async def extract_attribute(
         page_or_locator: PageOrLocator, selector: str, attribute: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """Extract an attribute value from an element."""
         try:
             element = page_or_locator.locator(selector).first
@@ -52,7 +53,7 @@ class Extractor:
     @staticmethod
     async def extract_attributes(
         page_or_locator: PageOrLocator, selector: str, attribute: str
-    ) -> List[str]:
+    ) -> list[str]:
         """Extract attribute values from multiple elements."""
         try:
             elements = page_or_locator.locator(selector)
@@ -67,7 +68,7 @@ class Extractor:
             return []
 
     @staticmethod
-    async def extract_html(page_or_locator: PageOrLocator, selector: str) -> Optional[str]:
+    async def extract_html(page_or_locator: PageOrLocator, selector: str) -> str | None:
         """Extract HTML content from an element."""
         try:
             element = page_or_locator.locator(selector).first
@@ -78,7 +79,7 @@ class Extractor:
             return None
 
     @staticmethod
-    async def extract_json(page: Page, selector: str = "body") -> Optional[Dict]:
+    async def extract_json(page: Page, selector: str = "body") -> dict | None:
         """Extract JSON from a script tag or parse JSON from page."""
         try:
             # Try to find JSON in script tags
@@ -104,9 +105,7 @@ class Extractor:
             return None
 
     @staticmethod
-    async def extract_table(
-        page: Page, selector: str = "table"
-    ) -> List[Dict[str, Any]]:
+    async def extract_table(page: Page, selector: str = "table") -> list[dict[str, Any]]:
         """Extract data from an HTML table."""
         try:
             table = page.locator(selector).first
@@ -143,7 +142,7 @@ class Extractor:
             return []
 
     @staticmethod
-    async def extract_links(page: Page, selector: str = "a") -> List[Dict[str, str]]:
+    async def extract_links(page: Page, selector: str = "a") -> list[dict[str, str]]:
         """Extract links with href and text."""
         try:
             links = []
@@ -160,7 +159,7 @@ class Extractor:
             return []
 
     @staticmethod
-    async def extract_images(page: Page, selector: str = "img") -> List[Dict[str, str]]:
+    async def extract_images(page: Page, selector: str = "img") -> list[dict[str, str]]:
         """Extract images with src and alt."""
         try:
             images = []
@@ -176,9 +175,7 @@ class Extractor:
             return []
 
     @staticmethod
-    async def wait_and_extract(
-        page: Page, selector: str, timeout: float = 30000
-    ) -> Optional[str]:
+    async def wait_and_extract(page: Page, selector: str, timeout: float = 30000) -> str | None:
         """Wait for element and extract text."""
         try:
             await page.wait_for_selector(selector, timeout=timeout)
@@ -190,10 +187,10 @@ class Extractor:
 class StructuredExtractor:
     """Extract structured data using a schema."""
 
-    def __init__(self, schema: Dict[str, Union[str, Dict]]):
+    def __init__(self, schema: dict[str, str | dict]):
         self.schema = schema
 
-    async def extract(self, page: Page) -> Dict[str, Any]:
+    async def extract(self, page: Page) -> dict[str, Any]:
         """Extract data according to the schema."""
         result = {}
         for key, selector in self.schema.items():
@@ -202,18 +199,14 @@ class StructuredExtractor:
                 if "selector" in selector:
                     extractor_type = selector.get("type", "text")
                     if extractor_type == "text":
-                        result[key] = await Extractor.extract_text(
-                            page, selector["selector"]
-                        )
+                        result[key] = await Extractor.extract_text(page, selector["selector"])
                     elif extractor_type == "attribute":
                         attr = selector.get("attribute", "href")
                         result[key] = await Extractor.extract_attribute(
                             page, selector["selector"], attr
                         )
                     elif extractor_type == "texts":
-                        result[key] = await Extractor.extract_texts(
-                            page, selector["selector"]
-                        )
+                        result[key] = await Extractor.extract_texts(page, selector["selector"])
                 elif "items" in selector:
                     # Extract list of items
                     items = []
@@ -222,9 +215,7 @@ class StructuredExtractor:
                     for i in range(count):
                         item_page = item_elements.nth(i)
                         item_data = {}
-                        for item_key, item_selector in selector.get(
-                            "schema", {}
-                        ).items():
+                        for item_key, item_selector in selector.get("schema", {}).items():
                             if isinstance(item_selector, str):
                                 item_data[item_key] = await Extractor.extract_text(
                                     item_page, item_selector
@@ -236,4 +227,3 @@ class StructuredExtractor:
                 result[key] = await Extractor.extract_text(page, selector)
 
         return result
-

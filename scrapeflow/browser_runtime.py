@@ -1,16 +1,15 @@
 """Playwright browser runtime adapter."""
 
-from typing import Optional
 from playwright.async_api import (
-    async_playwright,
-    Playwright,
     Browser,
     BrowserContext,
     Page,
+    Playwright,
+    async_playwright,
 )
 
-from scrapeflow.config import ScrapeFlowConfig, BrowserType
 from scrapeflow.anti_detection import AntiDetectionManager
+from scrapeflow.config import BrowserType, ScrapeFlowConfig
 
 
 class PlaywrightBrowserRuntime:
@@ -19,14 +18,14 @@ class PlaywrightBrowserRuntime:
     def __init__(self, config: ScrapeFlowConfig, anti_detection: AntiDetectionManager):
         self.config = config
         self.anti_detection = anti_detection
-        self.playwright: Optional[Playwright] = None
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
+        self.playwright: Playwright | None = None
+        self.browser: Browser | None = None
+        self.context: BrowserContext | None = None
+        self._page: Page | None = None
         self._is_running = False
 
     @property
-    def page(self) -> Optional[Page]:
+    def page(self) -> Page | None:
         return self._page
 
     async def start(self) -> None:
@@ -68,6 +67,7 @@ class PlaywrightBrowserRuntime:
         }
         if self.config.browser.storage_state_path:
             import os
+
             if os.path.exists(self.config.browser.storage_state_path):
                 context_options["storage_state"] = self.config.browser.storage_state_path
         self.context = await self.browser.new_context(**context_options)

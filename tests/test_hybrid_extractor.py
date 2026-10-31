@@ -1,14 +1,12 @@
 """Tests for HybridExtractor."""
 
-import pytest
 from pydantic import BaseModel, Field
 
 from scrapeflow.specifications import (
     HybridExtractor,
-    FieldSpec,
     ItemSpec,
-    _schema_has_item_spec,
     _field_descriptions_from_model,
+    _schema_has_item_spec,
 )
 
 
@@ -30,9 +28,14 @@ def test_hybrid_extractor_instantiation():
 def test_schema_has_item_spec():
     """_schema_has_item_spec detects ItemSpec in schema."""
     assert _schema_has_item_spec({"a": "div", "b": "span"}) is False
-    assert _schema_has_item_spec({
-        "items": ItemSpec(items_selector=".x", fields={"x": "span"}),
-    }) is True
+    assert (
+        _schema_has_item_spec(
+            {
+                "items": ItemSpec(items_selector=".x", fields={"x": "span"}),
+            }
+        )
+        is True
+    )
 
 
 def test_field_descriptions_from_model():

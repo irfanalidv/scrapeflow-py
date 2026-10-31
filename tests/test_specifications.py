@@ -1,14 +1,10 @@
 """Tests for specification-driven extraction."""
 
-import pytest
-from pydantic import BaseModel, Field
-
 from scrapeflow.specifications import (
     FieldSpec,
     ItemSpec,
-    SpecificationExtractor,
-    ProductPriceSpec,
     JobListingSpec,
+    ProductPriceSpec,
 )
 
 
