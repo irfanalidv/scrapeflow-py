@@ -69,9 +69,10 @@ def _get_api_key() -> str:
     key = os.environ.get("MISTRAL_API_KEY", "")
     if not key:
         try:
-            from dotenv import load_dotenv
+            from dotenv import find_dotenv, load_dotenv
 
-            load_dotenv()
+            # Search from the caller's working directory, not from this package's install path.
+            load_dotenv(find_dotenv(usecwd=True))
             key = os.environ.get("MISTRAL_API_KEY", "")
         except ImportError:
             pass
