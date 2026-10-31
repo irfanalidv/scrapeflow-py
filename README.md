@@ -1,1275 +1,339 @@
-<div align="center">
-
 # ScrapeFlow
 
-**An opinionated scraping workflow engine built on Playwright.**
-
-Retries, rate limiting, anti-detection, robots.txt compliance, Pydantic spec-driven and
-Mistral LLM-powered extraction, login sessions, workflows, and metrics in one async API.
+**A Playwright scraping engine that checks robots.txt, rate-limits and retries every navigation, and returns validated Pydantic objects instead of loose strings.**
 
 [![PyPI version](https://img.shields.io/pypi/v/scrapeflow-py.svg)](https://pypi.org/project/scrapeflow-py/)
 [![Python versions](https://img.shields.io/pypi/pyversions/scrapeflow-py.svg)](https://pypi.org/project/scrapeflow-py/)
-[![CI](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/ci.yml/badge.svg)](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/ci.yml)
-[![PyPI Downloads](https://static.pepy.tech/badge/scrapeflow-py)](https://pepy.tech/projects/scrapeflow-py)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Playwright](https://img.shields.io/badge/Playwright-1.40%2B-green)](https://playwright.dev/)
+[![Downloads](https://static.pepy.tech/badge/scrapeflow-py)](https://pepy.tech/projects/scrapeflow-py)
+[![CI](https://img.shields.io/github/actions/workflow/status/irfanalidv/scrapeflow-py/ci.yml?branch=main&label=CI)](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/irfanalidv/scrapeflow-py/codeql.yml?branch=main&label=CodeQL)](https://github.com/irfanalidv/scrapeflow-py/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/pypi/l/scrapeflow-py.svg)](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![typed: mypy](https://img.shields.io/badge/typed-mypy-blue.svg)](https://mypy-lang.org/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/irfanalidv/scrapeflow-py/blob/main/CONTRIBUTING.md)
 
-</div>
+## Why
 
----
+Raw Playwright scripts tend to grow the same plumbing every time: a retry loop, a sleep between
+requests, a robots.txt check someone forgot, and a pile of `text_content()` calls whose `None`s
+surface three steps later. ScrapeFlow puts that plumbing in one async engine. Every `navigate()`
+checks robots.txt, waits for a rate-limit token and retries with backoff. Extraction is declared
+once as selectors plus a Pydantic model, so bad data fails at the page that produced it. When a
+redesign breaks your selectors, an optional LLM backend can fill in the fields instead.
 
-ScrapeFlow is a production-ready Python library that transforms Playwright into a powerful, enterprise-grade web scraping framework. It handles the common challenges of web scraping: retries, rate limiting, anti-detection, error recovery, and workflow orchestration.
+## Features
 
-## 🚀 Features
+| Area | What you get |
+| --- | --- |
+| Polite by default | robots.txt checked before every navigation ([RFC 9309](https://www.rfc-editor.org/rfc/rfc9309) failure rules), token-bucket rate limiting, `Crawl-delay` lookup |
+| Resilience | Exponential backoff with jitter on navigation, clicks and form fills; `retryable` workflow steps re-run on transient errors; per-step timeouts |
+| Spec-driven extraction | `FieldSpec` / `ItemSpec` selectors with fallback chains, attribute preference, URL resolution and defaults, validated by your Pydantic model |
+| Hybrid extraction | `HybridExtractor` tries selectors first and calls an `MCPBackend` (built-in: Mistral) only when validation fails |
+| LLM helpers | `generate_schema_from_prompt`, `extract_with_schema` (Mistral JSON mode, system prompt that tells the model to ignore instructions embedded in the page), HTML cleaning to cut tokens |
+| Workflows | `Workflow` steps with conditions, required or optional steps, `on_success` / `on_error` callbacks, shared context |
+| Sessions | Reusable `LoginHandler`s, `save_storage_state()` / `storage_state_path` to skip re-login |
+| Reusable components | `SelectorRegistry` for versioned selectors, pagination handlers, login flows and schemas; `paginate()` with page, result and time limits |
+| Observability | Request metrics (success rate, latency, errors by type, retries), failure-rate and consecutive-failure alert callbacks |
+| Testable design | Every collaborator (runtime, rate limiter, retry handler, robots checker, logger, monitor) can be injected through protocol ports |
+| Typed | Ships `py.typed`; checked with mypy |
 
-- **📋 Specification-Driven Extraction**: Declarative Pydantic models define fields, types, and validation—decouple field definitions from page structure
-- **🤖 robots.txt Compliance**: Built-in robots.txt parsing and enforcement; ethical crawling by design
-- **⚖️ Ethical Crawling (GDPR/CCPA)**: Configurable data retention, anonymization, and consent options in the specification layer
-- **📦 Component Registry**: Shared, versioned selectors, pagination handlers, and login flows—platform thinking over one-off scrapers
-- **🔔 Monitoring & Alerting**: Alert callbacks on failure thresholds; rollback hooks for failed extraction runs
-- **🔌 Pluggable Extraction Backends**: `MCPBackend` interface with a built-in Mistral LLM backend; subclass it to plug in an MCP server (Scrapy/Playwright MCP adapters are planned, not yet implemented)
-- **🤖 Mistral LLM Extraction**: Generate schemas from natural language, extract without selectors—uses `MISTRAL_API_KEY`
-- **🔄 Hybrid Extraction**: Selector-first, LLM fallback when validation fails—self-healing spiders
-- **🛡️ Selector Fallback Chain**: Try multiple selectors per field (`[".price", ".cost"]`) for resilience
-- **🫙 Session Persistence**: Save/load cookies and localStorage via `save_storage_state()` and `storage_state_path`
-- **🧹 Content Cleaning**: Strip scripts/styles before LLM extraction for better accuracy and token usage
-- **🔄 Intelligent Retry Logic**: Automatic retries with exponential backoff and jitter
-- **⚡ Rate Limiting**: Token bucket algorithm to respect server limits
-- **🕵️ Anti-Detection**: Stealth mode, user agent rotation, and proxy support
-- **📊 Workflow Engine**: Define complex scraping workflows with steps and conditions
-- **📈 Monitoring & Metrics**: Built-in performance monitoring and logging
-- **🛠️ Data Extraction**: Powerful utilities for extracting structured data
-- **🔧 Error Handling**: Comprehensive error classification and recovery
-- **📝 Type Hints**: Full type support for better IDE experience
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/irfanalidv/scrapeflow-py/main/docs/scrapeflow-architecture.png" alt="ScrapeFlow Architecture" width="800">
-</p>
-
-## 📦 Installation
-
-Requires Python 3.10+.
+## Install
 
 ```bash
 pip install scrapeflow-py
-playwright install chromium   # download the browser Playwright drives
+# or
+uv add scrapeflow-py
+
+playwright install chromium              # download the browser Playwright drives
+playwright install --with-deps chromium  # on a fresh Linux machine or container
 ```
 
-Or install from source:
+Requires Python 3.10 to 3.13. The import name is `scrapeflow`. The Mistral SDK is a regular
+dependency but is only called when you use the LLM features. A `Dockerfile` is included.
 
-```bash
-git clone https://github.com/irfanalidv/scrapeflow-py.git
-cd scrapeflow-py
-pip install -e .
-playwright install chromium
-```
+## Quickstart
 
-On a fresh Linux machine or container, `playwright install --with-deps chromium` also installs
-the system libraries Chromium needs. A `Dockerfile` is included.
-
-## ⚙️ Configuration (environment variables)
-
-| Variable | Purpose |
-| --- | --- |
-| `MISTRAL_API_KEY` | Required only for LLM features (`generate_schema_from_prompt`, `extract_with_schema`, `MistralLLMBackend`, `HybridExtractor` LLM fallback). Read from the environment or a `.env` file. |
-
-Everything else (rate limits, retries, browser, anti-detection, robots.txt, ethical crawling) is
-configured in code via `ScrapeFlowConfig`; see [Configuration](#configuration) below.
-
-## 🎯 Real-World Use Cases
-
-Typical use cases:
-
-- **💰 E-commerce Price Monitoring** - Track competitor prices, monitor deals, and optimize pricing strategies
-- **📰 News & Content Aggregation** - Collect articles from multiple sources for content platforms
-- **💼 Job Listings Scraping** - Aggregate job postings from various job boards
-- **🏠 Real Estate Data Collection** - Monitor property listings, prices, and market trends
-- **⭐ Product Review Analysis** - Extract and analyze customer reviews for market research
-- **📊 Market Research** - Gather competitor data, customer sentiment, and industry trends
-- **🔍 Lead Generation** - Extract contact information from business directories
-- **📈 Financial Data Collection** - Monitor stock prices, cryptocurrency data, and market indicators
-
-## 🚀 Quick Start
-
-### Use Case 1: Scraping Quotes with Retry & Rate Limiting
-
-**Real-world scenario:** Collecting inspirational quotes from [quotes.toscrape.com](https://quotes.toscrape.com/) - a real website designed for scraping practice.
+Needs network access: it scrapes [books.toscrape.com](https://books.toscrape.com/), a site
+built for scraping practice.
 
 ```python
 import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, RateLimitConfig, RetryConfig
-from scrapeflow.extractors import Extractor
 
-async def main():
-    # Configure for production scraping
-    config = ScrapeFlowConfig(
-        rate_limit=RateLimitConfig(requests_per_second=2.0),  # Respect server limits
-        retry=RetryConfig(max_retries=3, initial_delay=1.0),  # Auto-retry on failures
-    )
-
-    async with ScrapeFlow(config) as scraper:
-        await scraper.navigate("https://quotes.toscrape.com/")
-
-        # Extract all quotes from the page
-        quotes = []
-        quote_elements = scraper.page.locator(".quote")
-        count = await quote_elements.count()
-
-        for i in range(count):
-            quote_elem = quote_elements.nth(i)
-            text = await quote_elem.locator(".text").text_content()
-            author = await quote_elem.locator(".author").text_content()
-            tags = await Extractor.extract_texts(quote_elem, ".tag")
-
-            quotes.append({
-                "quote": text.strip() if text else "",
-                "author": author.strip() if author else "",
-                "tags": tags
-            })
-
-        print(f"Scraped {len(quotes)} quotes")
-        for quote in quotes[:3]:  # Show first 3
-            print(f"\n{quote['quote']}\n— {quote['author']}")
-
-asyncio.run(main())
-```
-
-**Real Output:**
-
-```
-Scraped 10 quotes from quotes.toscrape.com
-
-1. Quote: "The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking."
-   Author: Albert Einstein
-   Tags: ['change', 'deep-thoughts', 'thinking', 'world']
-
-2. Quote: "It is our choices, Harry, that show what we truly are, far more than our abilities."
-   Author: J.K. Rowling
-   Tags: ['abilities', 'choices']
-
-3. Quote: "There are only two ways to live your life. One is as though nothing is a miracle. The other is as though everything is a miracle."
-   Author: Albert Einstein
-   Tags: ['inspirational', 'life', 'live', 'miracle', 'miracles']
-```
-
-### Use Case 2: E-commerce Book Scraping Workflow
-
-**Real-world scenario:** Scraping book data from [books.toscrape.com](https://books.toscrape.com/) - a real e-commerce site designed for scraping practice.
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow, Workflow
-from scrapeflow.config import ScrapeFlowConfig
-from scrapeflow.extractors import StructuredExtractor
-
-async def scrape_books(page, context):
-    """Extract book listings from the page."""
-    schema = {
-        "books": {
-            "items": "article.product_pod",
-            "schema": {
-                "title": "h3 a",
-                "price": ".price_color",
-                "availability": ".instock.availability"
-            }
-        }
-    }
-    extractor = StructuredExtractor(schema)
-    return await extractor.extract(page)
-
-async def check_affordable_books(data, context):
-    """Callback to find affordable books."""
-    for book in data.get("books", []):
-        price_str = book.get("price", "").replace("£", "").strip()
-        try:
-            price = float(price_str)
-            if price < 20.0:  # Books under £20
-                print(f"💰 Affordable: {book['title'][:50]}... - £{price}")
-        except ValueError:
-            pass
-
-async def main():
-    config = ScrapeFlowConfig()
-    async with ScrapeFlow(config) as scraper:
-        workflow = Workflow(name="book_scraper")
-
-        # Step 1: Navigate to books page
-        async def navigate_to_books(page, context):
-            scraper = context["scraper"]
-            await scraper.navigate("https://books.toscrape.com/")
-            await scraper.wait_for_selector("article.product_pod", timeout=10000)
-
-        # Step 2: Extract book data
-        workflow.add_step("navigate", navigate_to_books, required=True)
-        workflow.add_step("extract", scrape_books, on_success=check_affordable_books)
-
-        # Execute workflow
-        result = await scraper.run_workflow(workflow)
-        print(f"✅ Scraped {len(result.final_data.get('books', []))} books")
-
-asyncio.run(main())
-```
-
-**Real Output:**
-
-```
-Workflow 'book_scraper' completed. Success: True, Steps: 2/2
-✅ Scraped 20 books
-```
-
-### Use Case 3: Quote Aggregation with Anti-Detection
-
-**Real-world scenario:** Collecting quotes from [quotes.toscrape.com](https://quotes.toscrape.com/) while avoiding detection using stealth mode and user agent rotation.
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import (
-    ScrapeFlowConfig,
-    AntiDetectionConfig,
-    RateLimitConfig
-)
-from scrapeflow.extractors import Extractor
-
-async def scrape_quotes_with_stealth():
-    """Scrape quotes with anti-detection enabled."""
-    config = ScrapeFlowConfig(
-        anti_detection=AntiDetectionConfig(
-            rotate_user_agents=True,  # Rotate user agents
-            stealth_mode=True,        # Remove automation indicators
-            viewport_width=1920,
-            viewport_height=1080
-        ),
-        rate_limit=RateLimitConfig(requests_per_second=1.0)  # Be respectful
-    )
-
-    async with ScrapeFlow(config) as scraper:
-        # Navigate to quotes site
-        await scraper.navigate("https://quotes.toscrape.com/")
-
-        # Verify stealth mode is working
-        user_agent = await scraper.page.evaluate("() => navigator.userAgent")
-        page_title = await scraper.page.title()
-
-        # Extract quote data
-        quotes = []
-        quote_elements = scraper.page.locator(".quote")
-        count = await quote_elements.count()
-
-        for i in range(count):
-            quote_elem = quote_elements.nth(i)
-            text = await quote_elem.locator(".text").text_content()
-            author = await quote_elem.locator(".author").text_content()
-
-            quotes.append({
-                "quote": text.strip() if text else "",
-                "author": author.strip() if author else "",
-                "url": await scraper.page.url
-            })
-
-        return quotes, user_agent, page_title
-
-# Run the scraper
-quotes, ua, title = asyncio.run(scrape_quotes_with_stealth())
-print(f"📰 Collected {len(quotes)} quotes from {title}")
-print(f"🕵️ User Agent: {ua[:60]}...")
-print(f"\nFirst quote: {quotes[0]['quote'][:80]}...")
-```
-
-**Real Output:**
-
-```
-📰 Collected 10 quotes from Quotes to Scrape
-🕵️ User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101...
-
-First quote: "The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking."
-```
-
-### Use Case 4: Multi-Page Scraping with Error Handling & Metrics
-
-**Real-world scenario:** Scraping multiple pages from [quotes.toscrape.com](https://quotes.toscrape.com/) with comprehensive error handling and performance monitoring.
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, RetryConfig
-from scrapeflow.exceptions import (
-    ScrapeFlowBlockedError,
-    ScrapeFlowTimeoutError,
-    ScrapeFlowRetryError
-)
-from scrapeflow.extractors import Extractor
-
-async def scrape_multiple_pages():
-    config = ScrapeFlowConfig(
-        retry=RetryConfig(max_retries=5, initial_delay=2.0),
-        log_level="INFO"
-    )
-
-    try:
-        async with ScrapeFlow(config) as scraper:
-            # Scrape multiple pages
-            all_quotes = []
-            pages = [
-                "https://quotes.toscrape.com/",
-                "https://quotes.toscrape.com/page/2/",
-            ]
-
-            for url in pages:
-                await scraper.navigate(url)
-
-                # Extract quotes
-                quote_elements = scraper.page.locator(".quote")
-                count = await quote_elements.count()
-
-                for i in range(count):
-                    quote_elem = quote_elements.nth(i)
-                    text = await quote_elem.locator(".text").text_content()
-                    author = await quote_elem.locator(".author").text_content()
-
-                    all_quotes.append({
-                        "quote": text.strip() if text else "",
-                        "author": author.strip() if author else "",
-                    })
-
-            # Get performance metrics
-            metrics = scraper.get_metrics()
-            print(f"📊 Success rate: {metrics.get_success_rate():.2f}%")
-            print(f"📊 Total requests: {metrics.total_requests}")
-            print(f"📊 Average response time: {metrics.average_response_time:.2f}s")
-
-            return all_quotes
-
-    except ScrapeFlowBlockedError as e:
-        print(f"🚫 Blocked! Retry after {e.retry_after} seconds")
-        return []
-    except ScrapeFlowTimeoutError:
-        print("⏱️ Request timed out")
-        return []
-    except ScrapeFlowRetryError as e:
-        print(f"❌ Failed after {e.retry_count} retries")
-        return []
-
-quotes = asyncio.run(scrape_multiple_pages())
-print(f"💼 Found {len(quotes)} quotes across pages")
-```
-
-**Real Output:**
-
-```
-📊 Success rate: 100.00%
-📊 Total requests: 2
-📊 Average response time: 1.10s
-💼 Found 20 quotes across pages
-```
-
-### Use Case 5: LLM-Powered Extraction (No Selectors)
-
-**Real-world scenario:** Extract structured data using Mistral AI—no CSS selectors, just natural language field descriptions. Ideal for pages with inconsistent markup or when you want semantic understanding.
-
-**Requires:** `MISTRAL_API_KEY` in `.env` or environment.
-
-```python
-import asyncio
-import os
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-from scrapeflow import ScrapeFlow, create_mcp_backend
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
-from scrapeflow.llm_extract import generate_schema_from_prompt, extract_with_schema
-
-async def run_llm_extraction():
-    if not os.environ.get("MISTRAL_API_KEY"):
-        print("Set MISTRAL_API_KEY in .env to run this example")
-        return
-
-    config = ScrapeFlowConfig(
-        ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True),
-    )
-
-    async with ScrapeFlow(config) as scraper:
-        await scraper.navigate("https://quotes.toscrape.com/")
-
-        # Option 1: Generate schema from natural language
-        schema = generate_schema_from_prompt(
-            "Extract quote text, author name, and list of tags"
-        )
-
-        # Option 2: Extract using schema + page content (no selectors!)
-        content = await scraper.page.evaluate("() => document.body.innerText")
-        data = extract_with_schema(
-            content,
-            schema,
-            prompt="Extract all quotes from this page with text, author, and tags",
-        )
-        print("LLM extracted:", data)
-
-        # Option 3: MistralLLMBackend—field descriptions only
-        backend = create_mcp_backend("mistral")
-        semantic_data = await backend.extract_with_semantics(
-            scraper.page,
-            field_descriptions={
-                "quote": "The quote text",
-                "author": "Author name",
-                "tags": "Comma-separated tags",
-            },
-            context="Extract the first quote on the page",
-        )
-        print("Semantic extraction:", semantic_data)
-
-asyncio.run(run_llm_extraction())
-```
-
-**Real Output:**
-
-```
-Generated schema: {'type': 'object', 'properties': {'quote_text': {...}, 'author_name': {...}, 'tags': {...}}, 'required': ['quote_text', 'author_name', 'tags']}
-
-LLM extracted: [{'quote_text': 'The world as we have created it is a process of our thinking...', 'author_name': 'Albert Einstein', 'tags': ['change', 'deep-thoughts', 'thinking', 'world']}, ...]
-
-Semantic extraction: {'quote': 'The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.', 'author': 'Albert Einstein', 'tags': 'change, deep-thoughts, thinking, world'}
-```
-
-**What you get:** Schema generation from prompts, extraction without brittle selectors, and semantic understanding of page content—powerful for dynamic or inconsistent sites.
-
-### Use Case 6: Login + Session Persistence
-
-**Real-world scenario:** Log in once, save cookies, then reuse the session on future runs—no re-login needed.
-
-```python
-import asyncio
-import os
-from scrapeflow import ScrapeFlow, SpecificationExtractor, get_registry, register_quotes_login_handler
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig, BrowserConfig
-from scrapeflow.specifications import FieldSpec, ItemSpec
 from pydantic import BaseModel
 
-class QuoteItem(BaseModel):
-    text: str
-    author: str
-
-class QuotesPage(BaseModel):
-    quotes: list[QuoteItem]
-
-async def run():
-    state_file = "/tmp/scrapeflow_session.json"
-    schema = {"quotes": ItemSpec(items_selector=".quote", fields={"text": ".text", "author": ".author"})}
-
-    # Step 1: Login and save (if first run)
-    if not os.path.exists(state_file):
-        async with ScrapeFlow(ScrapeFlowConfig(ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True))) as scraper:
-            register_quotes_login_handler(get_registry())
-            handler = get_registry().get_login("quotes_login")
-            await scraper.login_with_handler("https://quotes.toscrape.com/login", "admin", "amdin", handler)
-            await scraper.save_storage_state(state_file)
-
-    # Step 2: Use saved session (no login)
-    config = ScrapeFlowConfig(ethical_crawling=EthicalCrawlingConfig(respect_robots_txt=True),
-                             browser=BrowserConfig(storage_state_path=state_file))
-    async with ScrapeFlow(config) as scraper:
-        await scraper.navigate("https://quotes.toscrape.com/")
-        data = await SpecificationExtractor(QuotesPage, schema=schema).extract(scraper.page)
-        print(f"Extracted {len(data.quotes)} quotes (authenticated)")
-
-asyncio.run(run())
-```
-
-**Real Output:**
-
-```
-Extracted 10 quotes (authenticated)
-```
-
-*(On first run: login + save; on subsequent runs: load session and extract without re-login.)*
-
-**What you get:** `login_with_handler`, `save_storage_state`, `storage_state_path`—reusable authenticated sessions.
-
-## 📚 Documentation
-
-### Configuration
-
-**Use Case:** Setting up a production-ready scraper for monitoring competitor prices across multiple sites.
-
-```python
-from scrapeflow.config import (
-    ScrapeFlowConfig,
-    AntiDetectionConfig,
-    RateLimitConfig,
-    RetryConfig,
-    BrowserConfig,
-    BrowserType,
-)
-
-# Production configuration for price monitoring
-config = ScrapeFlowConfig(
-    browser=BrowserConfig(
-        browser_type=BrowserType.CHROMIUM,
-        headless=True,  # Run in background
-        timeout=30000,   # 30 second timeout
-    ),
-    retry=RetryConfig(
-        max_retries=5,           # Retry up to 5 times
-        initial_delay=1.0,       # Start with 1 second delay
-        max_delay=60.0,          # Cap at 60 seconds
-        exponential_base=2.0,     # Double delay each retry
-        jitter=True,              # Add randomness
-    ),
-    rate_limit=RateLimitConfig(
-        requests_per_second=2.0,  # Max 2 requests/second
-        burst_size=5,              # Allow bursts of 5
-    ),
-    anti_detection=AntiDetectionConfig(
-        rotate_user_agents=True,   # Rotate user agents
-        stealth_mode=True,          # Remove automation traces
-        viewport_width=1920,
-        viewport_height=1080,
-    ),
-    log_level="INFO",  # Log important events
-)
-```
-
-### Specification-Driven Extraction (Pydantic)
-
-**Use Case:** Declarative extraction with validation—fields, types, and rules in specs, not fragile XPaths.
-
-```python
-from pydantic import BaseModel
 from scrapeflow import ScrapeFlow, SpecificationExtractor
-from scrapeflow.specifications import FieldSpec, ItemSpec, ProductPriceSpec
+from scrapeflow.specifications import FieldSpec, ItemSpec
 
-# Model for list of products
-class BookListing(BaseModel):
-    books: list[ProductPriceSpec]
 
-# Schema maps fields to selectors
-schema = {
+class Book(BaseModel):
+    title: str
+    price: str
+
+
+class Catalogue(BaseModel):
+    books: list[Book]
+
+
+SCHEMA = {
     "books": ItemSpec(
         items_selector="article.product_pod",
         fields={
-            "title": FieldSpec(selector="h3 a"),
-            "price": FieldSpec(selector=".price_color"),
-            "availability": FieldSpec(selector=".instock.availability", default=""),
-            "url": FieldSpec(selector="h3 a", type="attribute", attribute="href"),
+            "title": FieldSpec(selector="h3 a", prefer_attribute="title"),
+            "price": ".price_color",
         },
     )
 }
 
-async with ScrapeFlow() as scraper:
-    await scraper.navigate("https://books.toscrape.com/")
-    extractor = SpecificationExtractor(BookListing, schema=schema)
-    # Extract and validate in one step
-    data = await extractor.extract(scraper.page)
-    for book in data.books:
-        print(f"{book.title}: {book.price}")
-```
 
-### Ethical Crawling & robots.txt
+async def main() -> None:
+    async with ScrapeFlow() as scraper:  # robots.txt check, rate limiting and retries are on
+        await scraper.navigate("https://books.toscrape.com/")
+        catalogue = await SpecificationExtractor(Catalogue, schema=SCHEMA).extract(scraper.page)
+    for book in catalogue.books[:3]:
+        print(book.price, book.title)
 
-**Use Case:** GDPR/CCPA compliance and robots.txt respect built into the specification layer.
-
-```python
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, EthicalCrawlingConfig
-
-config = ScrapeFlowConfig(
-    ethical_crawling=EthicalCrawlingConfig(
-        respect_robots_txt=True,      # Check robots.txt before each request
-        user_agent_for_robots="ScrapeFlow",
-        anonymize_ip=True,            # GDPR: minimize personal data
-        data_retention_days=30,       # Document retention policy
-    )
-)
-
-async with ScrapeFlow(config) as scraper:
-    # navigate() automatically checks robots.txt
-    await scraper.navigate("https://example.com/page")
-```
-
-### Anti-Detection
-
-**Use Case:** Scraping protected e-commerce sites that block automated access.
-
-```python
-from scrapeflow.config import ScrapeFlowConfig, AntiDetectionConfig
-
-# Configure anti-detection for protected sites
-config = ScrapeFlowConfig(
-    anti_detection=AntiDetectionConfig(
-        # Rotate user agents to appear as different browsers
-        rotate_user_agents=True,
-        user_agents=[
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Firefox/120.0",
-        ],
-        # Enable stealth mode to remove automation indicators
-        stealth_mode=True,  # Removes webdriver property, mocks plugins, etc.
-        # Use realistic viewport sizes
-        viewport_width=1920,
-        viewport_height=1080,
-        # Optional: Rotate proxies for additional protection
-        rotate_proxies=True,
-        proxies=[
-            {"server": "http://proxy1.example.com:8080"},
-            {"server": "http://proxy2.example.com:8080"},
-        ],
-    )
-)
-
-async with ScrapeFlow(config) as scraper:
-    # This will use stealth techniques automatically
-    await scraper.navigate("https://protected-site.com")
-    # Your scraping code here...
-```
-
-### Rate Limiting
-
-**Use Case:** Respecting API rate limits when scraping multiple pages to avoid getting blocked.
-
-```python
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, RateLimitConfig
-
-config = ScrapeFlowConfig(
-    rate_limit=RateLimitConfig(
-        requests_per_second=1.0,    # Max 1 request per second
-        requests_per_minute=60.0,   # Or 60 requests per minute
-        burst_size=5,                # Allow bursts of 5 requests
-    )
-)
-
-async with ScrapeFlow(config) as scraper:
-    # Scrape multiple pages - rate limiter ensures we don't exceed limits
-    urls = [
-        "https://quotes.toscrape.com/page/1/",
-        "https://quotes.toscrape.com/page/2/",
-        "https://quotes.toscrape.com/page/3/",
-    ]
-
-    for url in urls:
-        await scraper.navigate(url)  # Automatically rate-limited
-        # Extract data...
-        print(f"Scraped: {url}")
-        # Rate limiter ensures proper delays between requests
-```
-
-### Retry Logic
-
-**Use Case:** Handling network failures and temporary server errors when scraping unreliable sources.
-
-```python
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, RetryConfig
-
-config = ScrapeFlowConfig(
-    retry=RetryConfig(
-        max_retries=5,              # Retry up to 5 times
-        initial_delay=1.0,          # Start with 1 second delay
-        max_delay=60.0,             # Cap at 60 seconds
-        exponential_base=2.0,       # Double delay each retry (1s, 2s, 4s, 8s...)
-        jitter=True,                 # Add randomness to avoid thundering herd
-    )
-)
-
-async with ScrapeFlow(config) as scraper:
-    # If this fails, it will automatically retry with exponential backoff
-    await scraper.navigate("https://unreliable-site.com/products")
-    # Retry logic handles:
-    # - Network timeouts
-    # - 500/502/503 server errors
-    # - Connection errors
-    # - Temporary blocks
-```
-
-### Pagination
-
-**Use Case:** Scrape multiple pages (e.g. search results, product listings) with limits.
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.config import ScrapeFlowConfig, PaginationConfig
-from scrapeflow.pagination import paginate
-from scrapeflow.registry import get_registry
-
-async def extract_quotes(page, context):
-    quotes = []
-    for i in range(await page.locator(".quote").count()):
-        q = page.locator(".quote").nth(i)
-        text = await q.locator(".text").text_content()
-        author = await q.locator(".author").text_content()
-        quotes.append({"text": text or "", "author": author or ""})
-    return quotes
-
-async def main():
-    get_registry().register_pagination("quotes", next_selector="li.next a", has_next="li.next")
-    handler = get_registry().get_pagination("quotes")
-    config = PaginationConfig(max_pages=3, max_results=25)
-
-    async with ScrapeFlow(ScrapeFlowConfig()) as scraper:
-        async for page_data in paginate(scraper, "https://quotes.toscrape.com/", handler, extract_quotes, config):
-            print(f"Page: {len(page_data)} quotes")
-            for q in page_data[:2]:
-                print(f"  - {q['author']}: {q['text'][:40]}...")
 
 asyncio.run(main())
 ```
 
-### Data Extraction
+Output (the engine's log lines go to stderr):
 
-**Use Case:** Extracting structured data from [quotes.toscrape.com](https://quotes.toscrape.com/) and [books.toscrape.com](https://books.toscrape.com/).
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.extractors import Extractor, StructuredExtractor
-
-async def main():
-    async with ScrapeFlow() as scraper:
-        await scraper.navigate("https://quotes.toscrape.com/")
-
-        # Method 1: Simple extraction
-        page_title = await Extractor.extract_text(scraper.page, "h1")
-        all_links = await Extractor.extract_links(scraper.page, "a")
-
-        # Method 2: Structured extraction with schema (Best for complex pages)
-        schema = {
-            "page_title": "h1",
-            "quotes": {
-                "items": ".quote",  # Find all quote elements
-                "schema": {
-                    "text": ".text",           # Extract quote text
-                    "author": ".author",       # Extract author
-                    "tags": ".tag",            # Extract all tags
-                },
-            },
-        }
-        extractor = StructuredExtractor(schema)
-        structured_data = await extractor.extract(scraper.page)
-
-        print(f"Page: {structured_data['page_title']}")
-        print(f"Quotes found: {len(structured_data['quotes'])}")
-        if structured_data['quotes']:
-            first = structured_data['quotes'][0]
-            print(f"First quote: {first['text'][:60]}...")
-            print(f"Author: {first['author']}")
-            print(f"Tags: {first['tags']}")
-
-asyncio.run(main())
+```text
+£51.77 A Light in the Attic
+£53.74 Tipping the Velvet
+£50.10 Soumission
 ```
 
-**Real Output:**
+If a required field is missing or has the wrong type, `extract()` raises
+`ScrapeFlowValidationError` naming the model, instead of handing you a half-empty dict.
 
-```
-Page: Quotes to Scrape
-Quotes found: 10
-First quote: "The world as we have created it is a process of our thinkin...
-Author: Albert Einstein
-Tags: ['change', 'deep-thoughts', 'thinking', 'world']
-```
+## How it works
 
-### Workflows
+```mermaid
+flowchart LR
+    user["Your code"] --> engine["ScrapeFlow<br/>engine.py"]
 
-**Use Case:** Building a multi-step scraper that navigates, extracts, and processes data with error handling.
+    subgraph navigate["navigate(url)"]
+        direction TB
+        robots["RobotsChecker<br/>robots.py"] --> limiter["RateLimiter<br/>token bucket"]
+        limiter --> retry["RetryHandler<br/>backoff + jitter"]
+        retry --> runtime["PlaywrightBrowserRuntime<br/>+ AntiDetectionManager"]
+    end
 
-```python
-import asyncio
-from scrapeflow import ScrapeFlow, Workflow
-from scrapeflow.extractors import Extractor
+    engine --> robots
+    robots -. "GET /robots.txt (aiohttp)" .-> site[("Website")]
+    runtime -- "page.goto" --> site
+    engine --> monitor["PerformanceMonitor<br/>+ Logger"]
+    engine --> executor["WorkflowExecutor"] --> steps["Step functions"]
 
-async def login_step(page, context):
-    """Step 1: Login to the site"""
-    # Scraper is automatically available in context
-    scraper = context["scraper"]
-    await scraper.navigate("https://example.com/login")
-    await scraper.fill("#username", context["username"])
-    await scraper.fill("#password", context["password"])
-    await scraper.click("button[type='submit']")
-    await scraper.wait_for_selector(".dashboard", timeout=10000)
+    subgraph extract["Extraction on engine.page"]
+        direction TB
+        basic["Extractor<br/>StructuredExtractor"]
+        spec["SpecificationExtractor"] --> model["Pydantic model"]
+        hybrid["HybridExtractor"] --> spec
+        hybrid -- "validation failed" --> backend["MCPBackend"]
+        backend --> mistral["MistralLLMBackend<br/>llm_extract.py"]
+    end
 
-async def extract_products(page, context):
-    """Step 2: Extract product data"""
-    products = []
-    product_elements = page.locator(".product")
-    count = await product_elements.count()
-
-    for i in range(count):
-        product = product_elements.nth(i)
-        products.append({
-            "name": await Extractor.extract_text(product, ".name"),
-            "price": await Extractor.extract_text(product, ".price"),
-        })
-    return products
-
-async def save_to_database(data, context):
-    """Callback: Save extracted data"""
-    print(f"💾 Saving {len(data)} products to database...")
-    # Your database save logic here
-
-async def handle_error(error, context):
-    """Callback: Handle errors"""
-    print(f"❌ Error in workflow: {error}")
-    # Your error handling logic here
-
-async def main():
-    async with ScrapeFlow() as scraper:
-        workflow = Workflow(name="product_scraper")
-
-        # Step 1: Login (required - stops workflow if fails)
-        workflow.add_step(
-            name="login",
-            func=login_step,
-            required=True,
-            retryable=True,
-        )
-
-        # Step 2: Extract products (only if login succeeded)
-        workflow.add_step(
-            name="extract",
-            func=extract_products,
-            retryable=True,
-            on_success=save_to_database,
-            on_error=handle_error,
-            condition=lambda ctx: ctx.get("logged_in", False),  # Conditional
-        )
-
-        # Set context
-        workflow.set_context("username", "user@example.com")
-        workflow.set_context("password", "secret123")
-
-        # Execute workflow
-        result = await scraper.run_workflow(workflow)
-        print(f"✅ Workflow completed: {result.success}")
-
-asyncio.run(main())
+    runtime -- "page" --> extract
+    mistral -. "chat.complete, JSON mode" .-> api[("Mistral API")]
 ```
 
-### Monitoring & Metrics
-
-**Use Case:** Monitoring scraping performance when scraping multiple pages from [quotes.toscrape.com](https://quotes.toscrape.com/).
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-
-async def main():
-    async with ScrapeFlow() as scraper:
-        # Perform multiple scraping operations
-        urls = [
-            "https://quotes.toscrape.com/",
-            "https://quotes.toscrape.com/page/2/",
-        ]
-
-        for url in urls:
-            await scraper.navigate(url)
-            # Extract data...
-
-        # Get comprehensive metrics
-        metrics = scraper.get_metrics()
-
-        print(f"📊 Performance Metrics:")
-        print(f"   Success Rate: {metrics.get_success_rate():.2f}%")
-        print(f"   Total Requests: {metrics.total_requests}")
-        print(f"   Successful: {metrics.successful_requests}")
-        print(f"   Failed: {metrics.failed_requests}")
-        print(f"   Retries: {metrics.retry_count}")
-        print(f"   Avg Response Time: {metrics.average_response_time:.2f}s")
-        print(f"   Total Duration: {metrics.total_duration:.2f}s")
-
-        # Reset metrics for next batch
-        scraper.reset_metrics()
-
-asyncio.run(main())
-```
-
-**Real Output:**
-
-```
-📊 Performance Metrics:
-   Success Rate: 100.00%
-   Total Requests: 2
-   Successful: 2
-   Failed: 0
-   Retries: 0
-   Avg Response Time: 1.10s
-   Total Duration: 2.20s
-```
-
-### Error Handling
-
-**Use Case:** Gracefully handling different types of errors when scraping [quotes.toscrape.com](https://quotes.toscrape.com/).
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow
-from scrapeflow.exceptions import (
-    ScrapeFlowError,
-    ScrapeFlowRetryError,
-    ScrapeFlowTimeoutError,
-    ScrapeFlowBlockedError,
-)
-
-async def scrape_with_error_handling():
-    async with ScrapeFlow() as scraper:
-        try:
-            await scraper.navigate("https://quotes.toscrape.com/")
-            title = await scraper.page.title()
-            print(f"✅ Successfully scraped: {title}")
-
-        except ScrapeFlowBlockedError as e:
-            # Site blocked us - wait and retry later
-            print(f"🚫 Blocked! Retry after {e.retry_after} seconds")
-
-        except ScrapeFlowTimeoutError:
-            # Request took too long
-            print("⏱️ Request timed out - site may be slow")
-
-        except ScrapeFlowRetryError as e:
-            # All retries exhausted
-            print(f"❌ Failed after {e.retry_count} retries")
-
-        except ScrapeFlowError as e:
-            # Generic ScrapeFlow error
-            print(f"⚠️ ScrapeFlow error: {e}")
-
-        except Exception as e:
-            # Other unexpected errors
-            print(f"💥 Unexpected error: {e}")
-
-asyncio.run(scrape_with_error_handling())
-```
-
-**Real Output:**
-
-```
-✅ Successfully scraped: Quotes to Scrape
-```
-
-## 📋 Feature Coverage—Nothing Hidden
-
-Every ScrapeFlow feature is demonstrated somewhere. Quick reference:
-
-| Feature | Where to See It |
-|---------|-----------------|
-| **Extractors** | Use Case 1, `basic_usage.py`, `advanced_example.py` |
-| **StructuredExtractor** | Use Case 2, `workflow_example.py`, `advanced_example.py` |
-| **SpecificationExtractor** | Use Case 6, Doc section, `specification_driven_example.py` |
-| **HybridExtractor** | `hybrid_extraction_example.py` |
-| **FieldSpec, ItemSpec** | Doc section, `specification_driven_example.py`, `hybrid_extraction_example.py` |
-| **Selector fallback** `[".a", ".b"]` | `hybrid_extraction_example.py` |
-| **LLM extraction** | Use Case 5, `llm_extraction_example.py` |
-| **Login** | Use Case 6, `authenticated_quotes_example.py`, `session_persistence_example.py` |
-| **Session persistence** | Use Case 6, `session_persistence_example.py` |
-| **Registry, LoginHandler** | `authenticated_quotes_example.py`, `specification_driven_example.py` |
-| **Workflow** | Use Case 2, `workflow_example.py` |
-| **Rate limit, Retry** | Use Cases 1, 4, `basic_usage.py`, `advanced_example.py` |
-| **Anti-detection** | Use Case 3, `advanced_example.py` |
-| **Ethical crawling, robots.txt** | `specification_driven_example.py`, `authenticated_quotes_example.py` |
-| **Pagination** | Doc section, `scrapeflow.pagination.paginate`, `PaginationConfig` |
-| **Content cleaning** | Used internally by MistralLLMBackend; `scrapeflow.content_utils` |
-
-## 🎨 Complete Examples
-
-Check out the `examples/` directory—each example showcases specific features:
-
-| Example | Features Demonstrated |
-|---------|------------------------|
-| `basic_usage.py` | ScrapeFlow, Extractor, rate limit, retry, metrics |
-| `workflow_example.py` | Workflow, steps, on_success/on_error, StructuredExtractor |
-| `advanced_example.py` | Anti-detection, rate limit, retry, StructuredExtractor |
-| `specification_driven_example.py` | SpecificationExtractor, FieldSpec, ItemSpec, ethical crawling, registry |
-| `authenticated_quotes_example.py` | Login, `login_with_handler`, registry, LoginHandler |
-| `llm_extraction_example.py` | Mistral LLM, `generate_schema_from_prompt`, `extract_with_schema`, MistralLLMBackend *(requires `MISTRAL_API_KEY`)* |
-| `hybrid_extraction_example.py` | HybridExtractor, selector fallback chain `[".a", ".b"]`, LLM fallback |
-| `session_persistence_example.py` | `save_storage_state`, `storage_state_path`, skip login on reuse |
-
-### Real Outputs from Examples
-
-Outputs below are from running each example against live sites (quotes.toscrape.com, books.toscrape.com).
-
-**`basic_usage.py`**
-
-```
-Page title: Quotes to Scrape
-
-Extracted 5 quotes:
-
-1. "The world as we have created it is a process of our thinkin...
-   Author: Albert Einstein
-   Tags: change, deep-thoughts, thinking, world
-
-2. "It is our choices, Harry, that show what we truly are, far ...
-   Author: J.K. Rowling
-   Tags: abilities, choices
-
-3. "There are only two ways to live your life. One is as though...
-   Author: Albert Einstein
-   Tags: inspirational, life, live, miracle, miracles
-
-4. "The person, be it gentleman or lady, who has not pleasure i...
-   Author: Jane Austen
-   Tags: aliteracy, books, classic, humor
-
-5. "Imperfection is beauty, madness is genius and it's better t...
-   Author: Marilyn Monroe
-   Tags: be-yourself, inspirational
-
-📊 Metrics:
-   Success rate: 100.00%
-   Total requests: 1
-   Average response time: 1.72s
-```
-
-**`advanced_example.py`**
-
-```
-📝 Extracted quotes:
-
-1. "The world as we have created it is a process of our thinkin...
-   Author: Albert Einstein
-   Tags: change, deep-thoughts, thinking, world
-
-2. "It is our choices, Harry, that show what we truly are, far ...
-   Author: J.K. Rowling
-   Tags: abilities, choices
-
-3. "There are only two ways to live your life. One is as though...
-   Author: Albert Einstein
-   Tags: inspirational, life, live, miracle, miracles
-
-4. "The person, be it gentleman or lady, who has not pleasure i...
-   Author: Jane Austen
-   Tags: aliteracy, books, classic, humor
-
-5. "Imperfection is beauty, madness is genius and it's better t...
-   Author: Marilyn Monroe
-   Tags: be-yourself, inspirational
-
-Scraping completed:
-  Success rate: 100.00%
-  Total requests: 1
-  Retries: 0
-```
-
-**`workflow_example.py`**
-
-```
-💾 Saving 20 books to database...
-   - A Light in the ...... - £51.77
-   - Tipping the Velvet... - £53.74
-   - Soumission... - £50.10
-
-✅ Workflow completed successfully!
-📚 Extracted 20 books
-
-📊 Metrics:
-   Total requests: 3
-   Success rate: 100.00%
-   Average response time: 5.85s
-```
-
-**`specification_driven_example.py`**
-
-```
-Extracted 10 items (validated via Pydantic)
-  1. "The world as we have created it is a process of o... | Albert Einstein
-  2. "It is our choices, Harry, that show what we truly... | J.K. Rowling
-  3. "There are only two ways to live your life. One is... | Albert Einstein
-
-Metrics: 1 requests, 100.0% success
-```
-
-**`authenticated_quotes_example.py`**
-
-```
-Authenticated login: True
-Quotes extracted: 10
-1. Albert Einstein: "The world as we have created it is a process of our thinking. It cannot be chan...
-2. J.K. Rowling: "It is our choices, Harry, that show what we truly are, far more than our abilit...
-3. Albert Einstein: "There are only two ways to live your life. One is as though nothing is a miracl...
-```
-
-**`hybrid_extraction_example.py`**
-
-```
-Extracted (selector or LLM):
-  Title: A Light in the Attic
-  Price: £51.77
-  Availability: In stock (22 available)
-```
-
-**`llm_extraction_example.py`** *(requires MISTRAL_API_KEY)*
-
-```
-Generated schema: {'type': 'object', 'properties': {'quote_text': {'type': 'string', 'description': 'The text of the quote'}, 'author_name': {'type': 'string', 'description': 'The name of the author of the quote'}, 'tags': {'type': 'array', 'description': 'A list of tags associated with the quote'}}, 'required': ['quote_text', 'author_name', 'tags']}
-
-LLM extracted: [{'quote_text': 'The world as we have created it is a process of our thinking...', 'author_name': 'Albert Einstein', 'tags': ['change', 'deep-thoughts', 'thinking', 'world']}, ...]
-
-Semantic extraction: {'quote': 'The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.', 'author': 'Albert Einstein', 'tags': 'change, deep-thoughts, thinking, world'}
-```
-
-**`session_persistence_example.py`**
-
-```
-Session saved to /tmp/scrapeflow_quotes_session.json
-Loaded session: extracted 10 quotes (authenticated)
-```
-
-### Example: Complete Book Scraper with All Features
-
-**Real-world scenario:** Complete example scraping books from [books.toscrape.com](https://books.toscrape.com/) using all ScrapeFlow features.
-
-```python
-import asyncio
-from scrapeflow import ScrapeFlow, Workflow
-from scrapeflow.config import (
-    ScrapeFlowConfig,
-    AntiDetectionConfig,
-    RateLimitConfig,
-    RetryConfig
-)
-from scrapeflow.extractors import StructuredExtractor
-
-async def scrape_books_complete():
-    """Complete book scraping solution with all ScrapeFlow features."""
-
-    config = ScrapeFlowConfig(
-        anti_detection=AntiDetectionConfig(
-            rotate_user_agents=True,
-            stealth_mode=True,
-        ),
-        rate_limit=RateLimitConfig(requests_per_second=1.0),
-        retry=RetryConfig(max_retries=3),
-    )
-
-    async with ScrapeFlow(config) as scraper:
-        workflow = Workflow(name="book_monitor")
-
-        async def extract_books(page, context):
-            schema = {
-                "books": {
-                    "items": "article.product_pod",
-                    "schema": {
-                        "title": "h3 a",
-                        "price": ".price_color",
-                    }
-                }
-            }
-            extractor = StructuredExtractor(schema)
-            return await extractor.extract(page)
-
-        async def navigate_to_books(page, context):
-            scraper = context["scraper"]
-            await scraper.navigate("https://books.toscrape.com/")
-            await scraper.wait_for_selector("article.product_pod", timeout=10000)
-
-        workflow.add_step("navigate", navigate_to_books, required=True)
-        workflow.add_step("extract", extract_books)
-
-        result = await scraper.run_workflow(workflow)
-
-        # Get metrics
-        metrics = scraper.get_metrics()
-        books = result.final_data.get("books", [])
-        print(f"✅ Scraped {len(books)} books")
-        print(f"📊 Success rate: {metrics.get_success_rate():.2f}%")
-        print(f"📊 Average response time: {metrics.average_response_time:.2f}s")
-
-        if books:
-            print(f"\n📚 Sample books:")
-            for book in books[:3]:
-                print(f"   - {book.get('title', '')[:40]}... - {book.get('price', '')}")
-
-        return result.final_data
-
-asyncio.run(scrape_books_complete())
-```
-
-**Real Output:**
-
-```
-Workflow 'book_monitor' completed. Success: True, Steps: 2/2
-✅ Scraped 20 books
-📊 Success rate: 100.00%
-📊 Average response time: 1.15s
-
-📚 Sample books:
-   - A Light in the Attic... - £51.77
-   - Tipping the Velvet... - £53.74
-   - Soumission... - £50.10
-```
-
-## 🏗️ Architecture
-
-ScrapeFlow is built with a modular architecture:
-
-```
-scrapeflow/
-├── engine.py           # Main ScrapeFlow engine
-├── ports.py            # Protocols for dependency inversion
-├── browser_runtime.py  # Playwright runtime adapter
-├── workflow.py         # Workflow definition entities
-├── workflow_executor.py # Workflow execution service
-├── config.py           # Configuration (EthicalCrawling, Pagination, etc.)
-├── specifications.py   # SpecificationExtractor, HybridExtractor, FieldSpec
-├── schema_library.py   # Reusable schema definitions
-├── extractors.py       # Extractor, StructuredExtractor
-├── llm_extract.py      # Mistral LLM schema + extraction
-├── content_utils.py    # HTML cleaning for LLM
-├── mcp_backend.py      # MCPBackend, MistralLLMBackend
-├── pagination.py       # paginate() helper
-├── robots.py           # robots.txt parsing and enforcement
-├── registry.py         # Selectors, login handlers, pagination
-├── anti_detection.py   # Stealth mode, user agent rotation
-├── rate_limiter.py     # Rate limiting implementation
-├── retry.py            # Retry logic and error classification
-├── monitoring.py       # Metrics, logging, alerting
-└── exceptions.py       # Custom exceptions
-```
-
-For deeper design details, see [`ARCHITECTURE.md`](https://github.com/irfanalidv/scrapeflow-py/blob/main/ARCHITECTURE.md). Release notes are in [`CHANGELOG.md`](https://github.com/irfanalidv/scrapeflow-py/blob/main/CHANGELOG.md).
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/CONTRIBUTING.md)
-and the [Code of Conduct](https://github.com/irfanalidv/scrapeflow-py/blob/main/CODE_OF_CONDUCT.md).
+Key design decisions:
+
+- **Ports and adapters.** `ScrapeFlow` depends on the protocols in `ports.py`, not on concrete
+  classes. Pass `runtime=`, `rate_limiter=`, `retry_handler=`, `robots_checker=`, `logger=` or
+  `monitor=` to swap any piece; the test suite drives the engine with fakes this way.
+- **Order inside `navigate()`.** robots.txt is checked once, before any request to the page. Rate
+  limiting happens inside the retried function, so every retry also waits for a token.
+- **Fail-closed robots.txt.** Following RFC 9309, a 4xx robots.txt means "no rules", while a 5xx or
+  a network error means "disallow everything" until the cache entry (1 hour) expires.
+- **Best-effort helpers, strict extraction.** `Extractor.extract_*` return `None` or `[]` when an
+  element is missing (the cause is logged at DEBUG). Strictness lives in `SpecificationExtractor`:
+  your Pydantic model decides what is required.
+- **LLM only as a fallback.** `HybridExtractor` never calls the backend while selectors produce
+  valid data, so pages that still match cost nothing extra.
+
+More detail: [ARCHITECTURE.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/ARCHITECTURE.md).
+
+## Use cases and recipes
+
+Every example runs offline against a small demo bookshop bundled in `examples/demo_site/` and
+served on `127.0.0.1`. You need Chromium (`playwright install chromium`) but no internet and no
+API key. CI runs all of them.
+
+| Script | What it shows |
+| --- | --- |
+| [`price_monitor.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/price_monitor.py) | Crawl a paginated catalogue with `paginate()` into validated records (price parsed to `float`), list the cheapest in-stock items, export CSV |
+| [`polite_crawler.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/polite_crawler.py) | robots.txt `Disallow` blocks a URL; `Crawl-delay` is read and turned into the rate limit; metrics at the end |
+| [`resilient_workflow.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/resilient_workflow.py) | Multi-step workflow: a transient failure retried, an optional step that fails without stopping the run, a conditional step, an HTML table parsed into dicts |
+| [`login_session_reuse.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/login_session_reuse.py) | Log in with a registered `LoginHandler`, save the session, then read members-only content in a fresh browser without logging in again |
+| [`hybrid_llm_fallback.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/hybrid_llm_fallback.py) | Selectors break after a "redesign"; `HybridExtractor` falls back to a backend (offline: a JSON-LD reader; `--live`: `MistralLLMBackend`) |
 
 ```bash
-git clone https://github.com/irfanalidv/scrapeflow-py.git && cd scrapeflow-py
-pip install -e ".[dev]" && playwright install chromium
-ruff check . && black --check . && pytest
+python examples/price_monitor.py
 ```
 
-Security issues: please follow [SECURITY.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/SECURITY.md).
+<details>
+<summary>More snippets: workflows and alerts, LLM extraction</summary>
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+**Workflow with an alerting monitor.** Needs network access. Each step receives `page` and
+`context`, and the engine is available as `context["scraper"]`.
 
-## 📝 License
+```python
+import asyncio
 
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE) file for details.
+from scrapeflow import ScrapeFlow, Workflow
+from scrapeflow.monitoring import PerformanceMonitor
 
-## 🙏 Acknowledgments
 
-- Built on top of [Playwright](https://playwright.dev/) - an amazing browser automation library
-- Inspired by the need for production-ready scraping solutions
+async def open_listing(page, context):
+    await context["scraper"].navigate("https://books.toscrape.com/")
 
-## 📧 Contact
 
-Irfan Ali - [GitHub](https://github.com/irfanalidv)
+async def count_books(page, context):
+    return await context["scraper"].page.locator("article.product_pod").count()
 
-Project Link: [https://github.com/irfanalidv/scrapeflow-py](https://github.com/irfanalidv/scrapeflow-py)
 
----
+async def main() -> None:
+    workflow = (
+        Workflow("books")
+        .add_step("open", open_listing)
+        .add_step("count", count_books, on_success=lambda n, ctx: print(n, "books"))
+    )
+    monitor = PerformanceMonitor(
+        alert_on_consecutive_failures=3,
+        alert_callback=lambda metrics, reason: print("ALERT:", reason),
+    )
+    async with ScrapeFlow(monitor=monitor) as scraper:
+        result = await scraper.run_workflow(workflow)
+        print(result.success, result.steps_completed)
+        print(scraper.get_metrics().successful_requests, "successful requests")
 
-**Made with ❤️ for the scraping community**
+
+asyncio.run(main())
+```
+
+```text
+20 books
+True ['open', 'count']
+3 successful requests
+```
+
+**LLM extraction without selectors.** Needs `MISTRAL_API_KEY`. This fragment assumes `page_text`
+holds page text and `scraper` is a started engine; see
+[`hybrid_llm_fallback.py`](https://github.com/irfanalidv/scrapeflow-py/blob/main/examples/hybrid_llm_fallback.py)
+for a complete script.
+
+```python
+from scrapeflow import create_mcp_backend, extract_with_schema, generate_schema_from_prompt
+
+
+async def llm_extract(scraper, page_text: str) -> None:
+    schema = generate_schema_from_prompt("book title and price")
+    print(extract_with_schema(page_text, schema, prompt="Extract every book on the page"))
+
+    backend = create_mcp_backend("mistral")
+    fields = {"title": "Book title", "price": "Price with currency"}
+    print(await backend.extract_with_semantics(scraper.page, fields))
+```
+
+</details>
+
+## Configuration
+
+Everything except the API key is configured in code through `ScrapeFlowConfig` and its parts.
+
+| Environment variable | Used by |
+| --- | --- |
+| `MISTRAL_API_KEY` | `generate_schema_from_prompt`, `extract_with_schema(_async)`, `MistralLLMBackend`, and `HybridExtractor`'s default backend. Read from the environment, or from `.env` via python-dotenv. A missing key raises `ScrapeFlowConfigurationError`. |
+
+<details>
+<summary>All options and defaults</summary>
+
+| Config | Field | Default | Meaning |
+| --- | --- | --- | --- |
+| `BrowserConfig` | `browser_type` | `CHROMIUM` | `CHROMIUM`, `FIREFOX` or `WEBKIT` |
+| | `headless` | `True` | |
+| | `timeout` | `30000` | Default timeout in ms (`0` means none) |
+| | `slow_mo`, `args`, `proxy` | `0`, `[]`, `None` | Passed to Playwright `launch()` |
+| | `storage_state_path` | `None` | Load cookies and localStorage from this file if it exists |
+| `RetryConfig` | `max_retries` | `3` | Retries after the first attempt |
+| | `initial_delay`, `max_delay` | `1.0`, `60.0` | Seconds; delay is `initial_delay * exponential_base ** attempt`, capped |
+| | `exponential_base` | `2.0` | |
+| | `jitter` | `True` | Adds up to 10% random delay |
+| `RateLimitConfig` | `requests_per_second` | `1.0` | Token refill rate |
+| | `requests_per_minute` | `None` | If both are set, the slower limit wins |
+| | `burst_size` | `5` | Bucket capacity (requests allowed back to back) |
+| `AntiDetectionConfig` | `stealth_mode` | `True` | Hide `navigator.webdriver` and similar automation hints |
+| | `rotate_user_agents`, `user_agents` | `True`, built-in list | Random user agent per browser context |
+| | `rotate_proxies`, `proxies` | `False`, `[]` | Round-robin proxy per launch |
+| | `viewport_width`, `viewport_height` | `1920`, `1080` | |
+| `EthicalCrawlingConfig` | `respect_robots_txt` | `True` | Check robots.txt in `navigate()` |
+| | `user_agent_for_robots` | `"ScrapeFlow"` | Name matched against robots.txt `User-agent` groups |
+| | `max_pages_per_domain`, `honor_noindex`, `data_retention_days`, `anonymize_ip`, `consent_required` | | Declarative policy fields stored with the config; ScrapeFlow does not enforce them yet |
+| `PaginationConfig` | `max_pages`, `max_results`, `max_wait_time` | `100`, `None`, `None` | Limits for `paginate()` |
+| `ScrapeFlowConfig` | `log_level`, `log_file` | `"INFO"`, `None` | Settings for the engine's `scrapeflow` logger |
+
+</details>
+
+## API overview
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `ScrapeFlow` | class | Engine: `start` / `close` (or `async with`), `navigate`, `click`, `fill`, `wait_for_selector`, `screenshot`, `login`, `login_with_handler`, `save_storage_state`, `run_workflow`, `get_metrics` |
+| `Workflow`, `Step` | classes | `add_step(name, func, ..., retryable, required, condition, on_success, on_error, timeout)` |
+| `SpecificationExtractor` | class | Selectors (`FieldSpec`, `ItemSpec`) to a validated Pydantic model |
+| `HybridExtractor` | class | Selector-first extraction with `MCPBackend` fallback |
+| `Extractor`, `StructuredExtractor` | classes | Best-effort helpers (text, attributes, HTML, JSON and JSON-LD, tables, links, images) and dict-schema extraction |
+| `MCPBackend`, `MistralLLMBackend`, `PlaceholderMCPBackend`, `create_mcp_backend` | classes, factory | Pluggable semantic extraction backends |
+| `generate_schema_from_prompt`, `extract_with_schema`, `extract_with_schema_async` | functions | Mistral-powered schema generation and extraction |
+| `RobotsChecker` | class | `can_fetch(url)` and `get_crawl_delay(url)` with per-origin caching |
+| `SelectorRegistry`, `get_registry`, `LoginHandler` | classes, function | Shared selectors, schemas, pagination and login components |
+| `paginate` | async generator | `scrapeflow.pagination.paginate(engine, url, handler, extract_func, config)` |
+| `ProductPriceSpec`, `JobListingSpec`, `TariffCodeSpec` | Pydantic models | Ready-made specs for common record types |
+| `ScrapeFlowError` and subclasses | exceptions | `ScrapeFlowRetryError`, `ScrapeFlowTimeoutError`, `ScrapeFlowBlockedError`, `ScrapeFlowValidationError`, `ScrapeFlowRobotsDisallowedError`, `ScrapeFlowNotStartedError`, `ScrapeFlowConfigurationError` |
+
+## Standards
+
+- **robots.txt:** M. Koster, G. Illyes, H. Zeller and L. Sassman. *Robots Exclusion Protocol.*
+  [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309), IETF, September 2022. Rules are parsed with
+  Python's `urllib.robotparser`, and fetch failures follow section 2.3.1. `Crawl-delay` is not part
+  of the RFC; ScrapeFlow reads it but does not apply it automatically.
+
+## When to use it
+
+- **ScrapeFlow** fits when pages need a real browser (JavaScript rendering, logins, clicks) and you
+  want retries, pacing, robots.txt and validated output without writing that plumbing yourself.
+- **Plain Playwright** is enough for a one-off script where none of that matters.
+- **An HTTP crawler such as Scrapy** is the better tool for large crawls of static HTML. It costs far
+  less per page than driving a browser, and it has scheduling, deduplication and export pipelines
+  that ScrapeFlow does not try to replicate.
+
+## Responsible use
+
+ScrapeFlow respects robots.txt by default and rate-limits every navigation. Keep it that way. You
+are responsible for complying with each site's terms of service, its robots.txt, and applicable law,
+including data-protection rules such as GDPR and CCPA when pages contain personal data. The
+anti-detection options exist so that sites do not serve broken pages to headless browsers. They are
+not a licence to get around access controls, paywalls or explicit bans. Prefer an official API when
+one exists.
+
+## Roadmap
+
+- Apply `Crawl-delay` automatically when `respect_robots_txt` is on.
+- Enforce `max_pages_per_domain` and `honor_noindex` from `EthicalCrawlingConfig`.
+- Real adapters for the `scrapy_mcp` and `playwright_mcp` backend names (today they warn and fall
+  back to the placeholder backend).
+- An optional OpenAI-compatible backend for `llm_extract`.
+
+## Contributing, security, citation, license
+
+- Contributions are welcome. See [CONTRIBUTING.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/CONTRIBUTING.md)
+  and the [Code of Conduct](https://github.com/irfanalidv/scrapeflow-py/blob/main/CODE_OF_CONDUCT.md).
+  The dev loop is `pip install -e ".[dev]" && playwright install chromium`, then
+  `ruff check . && ruff format --check . && mypy scrapeflow && pytest --cov=scrapeflow`.
+- Report vulnerabilities as described in [SECURITY.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/SECURITY.md).
+- To cite ScrapeFlow, use [CITATION.cff](https://github.com/irfanalidv/scrapeflow-py/blob/main/CITATION.cff).
+- Release notes are in [CHANGELOG.md](https://github.com/irfanalidv/scrapeflow-py/blob/main/CHANGELOG.md).
+- MIT licensed. See [LICENSE](https://github.com/irfanalidv/scrapeflow-py/blob/main/LICENSE).

@@ -22,21 +22,22 @@ ScrapeFlow is MIT-licensed. When contributing:
 ## Development Setup
 
 ```bash
-# Install in development mode
-pip install -e .
+# Install in development mode (or: uv pip install -e ".[dev]")
+pip install -e ".[dev]"
+playwright install chromium
 
-# Run tests
-pytest
+# Optional: run ruff automatically on every commit
+pre-commit install
 
-# Format code
-black .
-
-# Lint code
+# The same checks CI runs
 ruff check .
-
-# Type checking
-mypy scrapeflow/
+ruff format --check .
+mypy scrapeflow
+pytest --cov=scrapeflow --cov-fail-under=95
 ```
+
+Tests never touch the internet: browser tests use a local `http.server`, and LLM calls are
+mocked. The examples in `examples/` are run by `tests/test_examples.py`.
 
 ## Code Style
 
@@ -44,8 +45,7 @@ mypy scrapeflow/
 - Use type hints for all functions
 - Write docstrings for all public functions and classes
 - Keep line length to 100 characters
-- Use `black` for code formatting
-- Use `ruff` for linting
+- Use `ruff format` for formatting and `ruff check` for linting
 
 ## Writing Tests
 
