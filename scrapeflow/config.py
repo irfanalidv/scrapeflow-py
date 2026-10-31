@@ -21,7 +21,7 @@ class RetryConfig:
     max_delay: float = 60.0
     exponential_base: float = 2.0
     jitter: bool = True
-    retryable_exceptions: tuple = (Exception,)  # Will be customized per use case
+    retryable_exceptions: tuple[type[BaseException], ...] = (Exception,)
 
 
 @dataclass
@@ -29,7 +29,7 @@ class RateLimitConfig:
     """Configuration for rate limiting."""
 
     requests_per_second: float = 1.0
-    requests_per_minute: float | None = None
+    requests_per_minute: float | None = None  # if both are set, the slower limit wins
     burst_size: int = 5
 
 

@@ -22,27 +22,27 @@ class ScrapeMetrics:
     start_time: float | None = None
     end_time: float | None = None
 
-    def record_success(self, duration: float):
+    def record_success(self, duration: float) -> None:
         """Record a successful request."""
         self.total_requests += 1
         self.successful_requests += 1
         self.total_duration += duration
         self._update_average()
 
-    def record_failure(self, duration: float, error: Exception):
+    def record_failure(self, duration: float, error: BaseException | None) -> None:
         """Record a failed request."""
         self.total_requests += 1
         self.failed_requests += 1
         self.total_duration += duration
-        error_type = type(error).__name__
-        self.errors_by_type[error_type] += 1
+        error_type = type(error).__name__ if error is not None else "Unknown"
+        self.errors_by_type[error_type] = self.errors_by_type.get(error_type, 0) + 1
         self._update_average()
 
-    def record_retry(self):
+    def record_retry(self) -> None:
         """Record a retry."""
         self.retry_count += 1
 
-    def _update_average(self):
+    def _update_average(self) -> None:
         """Update average response time."""
         if self.total_requests > 0:
             self.average_response_time = self.total_duration / self.total_requests
@@ -75,12 +75,15 @@ class Logger:
         name: str = "scrapeflow",
         level: str = "INFO",
         log_file: str | None = None,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(getattr(logging, level.upper()))
 
-        # Remove existing handlers
-        self.logger.handlers.clear()
+        # Replace handlers installed by a previous Logger for this name. Close them first so
+        # file handles are not leaked when several ScrapeFlow instances are created.
+        for old in list(self.logger.handlers):
+            self.logger.removeHandler(old)
+            old.close()
 
         # Console handler
         console_handler = logging.StreamHandler()
@@ -101,23 +104,23 @@ class Logger:
             file_handler.setFormatter(file_formatter)
             self.logger.addHandler(file_handler)
 
-    def debug(self, message: str, **kwargs):
+    def debug(self, message: str, **kwargs: Any) -> None:
         """Log debug message."""
         self.logger.debug(message, **kwargs)
 
-    def info(self, message: str, **kwargs):
+    def info(self, message: str, **kwargs: Any) -> None:
         """Log info message."""
         self.logger.info(message, **kwargs)
 
-    def warning(self, message: str, **kwargs):
+    def warning(self, message: str, **kwargs: Any) -> None:
         """Log warning message."""
         self.logger.warning(message, **kwargs)
 
-    def error(self, message: str, **kwargs):
+    def error(self, message: str, **kwargs: Any) -> None:
         """Log error message."""
         self.logger.error(message, **kwargs)
 
-    def exception(self, message: str, **kwargs):
+    def exception(self, message: str, **kwargs: Any) -> None:
         """Log exception with traceback."""
         self.logger.exception(message, **kwargs)
 
@@ -136,7 +139,7 @@ class PerformanceMonitor:
         alert_on_consecutive_failures: int | None = None,
         alert_callback: Callable[[ScrapeMetrics, str], None] | None = None,
         rollback_callback: Callable[[ScrapeMetrics], bool] | None = None,
-    ):
+    ) -> None:
         """
         Args:
             alert_on_failure_rate: Alert if success rate drops below this (0-100).
@@ -152,13 +155,15 @@ class PerformanceMonitor:
         self.rollback_callback = rollback_callback
         self._consecutive_failures = 0
 
-    def start_request(self):
-        """Mark the start of a request."""
-        return time.time()
+    def start_request(self) -> float:
+        """Mark the start of a request (monotonic clock, for measuring durations)."""
+        return time.perf_counter()
 
-    def end_request(self, start_time: float, success: bool, error: Exception | None = None):
+    def end_request(
+        self, start_time: float, success: bool, error: BaseException | None = None
+    ) -> None:
         """Mark the end of a request and record metrics."""
-        duration = time.time() - start_time
+        duration = time.perf_counter() - start_time
         if success:
             self.metrics.record_success(duration)
             self._consecutive_failures = 0
@@ -168,16 +173,24 @@ class PerformanceMonitor:
             self._check_alerts("consecutive_failures")
         self._check_alerts("failure_rate")
 
-    def _check_alerts(self, reason: str):
-        """Check alert thresholds and invoke callbacks."""
+    def _check_alerts(self, reason: str) -> None:
+        """Check alert thresholds and invoke callbacks.
+
+        The failure-rate alert needs at least 5 recorded requests before it can fire.
+        ``rollback_callback`` is invoked on the consecutive-failure threshold; acting on its
+        return value is left to the caller.
+        """
         if reason == "failure_rate" and self.alert_on_failure_rate is not None:
             rate = self.metrics.get_success_rate()
-            if self.metrics.total_requests >= 5 and rate < self.alert_on_failure_rate:
-                if self.alert_callback:
-                    self.alert_callback(
-                        self.metrics,
-                        f"Success rate {rate:.1f}% below threshold {self.alert_on_failure_rate}%",
-                    )
+            if (
+                self.metrics.total_requests >= 5
+                and rate < self.alert_on_failure_rate
+                and self.alert_callback
+            ):
+                self.alert_callback(
+                    self.metrics,
+                    f"Success rate {rate:.1f}% below threshold {self.alert_on_failure_rate}%",
+                )
         if (
             reason == "consecutive_failures"
             and self.alert_on_consecutive_failures is not None
@@ -188,10 +201,10 @@ class PerformanceMonitor:
                     self.metrics,
                     f"{self._consecutive_failures} consecutive failures",
                 )
-            if self.rollback_callback and self.rollback_callback(self.metrics):
-                pass  # Caller handles rollback logic
+            if self.rollback_callback:
+                self.rollback_callback(self.metrics)
 
-    def record_retry(self):
+    def record_retry(self) -> None:
         """Record a retry."""
         self.metrics.record_retry()
 
@@ -200,7 +213,7 @@ class PerformanceMonitor:
         self.metrics.end_time = time.time()
         return self.metrics
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset metrics."""
         self.metrics = ScrapeMetrics()
         self.metrics.start_time = time.time()

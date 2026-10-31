@@ -6,15 +6,17 @@ their types, and validation rules. Aligns with specification-driven extraction
 best practices for decoupling field definitions from page structure.
 """
 
+from __future__ import annotations
+
 import re
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 from urllib.parse import urljoin
 
-from playwright.async_api import Locator, Page
+from playwright.async_api import Page
 from pydantic import BaseModel, Field, field_validator
 
 from scrapeflow.exceptions import ScrapeFlowValidationError
-from scrapeflow.extractors import Extractor
+from scrapeflow.extractors import Extractor, PageOrLocator
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -62,7 +64,7 @@ def _field_spec_to_extractor_args(spec: str | FieldSpec) -> dict[str, Any]:
 
 
 async def _extract_one(
-    locator: Locator,
+    locator: PageOrLocator,
     selector: str,
     extract_type: str,
     attribute: str | None,
@@ -89,7 +91,7 @@ async def _extract_one(
 
 
 async def _extract_from_locator(
-    locator: Locator, spec: str | FieldSpec, base_url: str | None = None
+    locator: PageOrLocator, spec: str | FieldSpec, base_url: str | None = None
 ) -> Any:
     """Extract value from a locator using field spec. Tries fallback selectors in order."""
     args = _field_spec_to_extractor_args(spec)
@@ -140,7 +142,7 @@ async def _extract_from_locator(
     return val if val is not None else default
 
 
-class SpecificationExtractor:
+class SpecificationExtractor(Generic[T]):
     """
     Extract and validate data using Pydantic model specifications.
 
@@ -153,16 +155,17 @@ class SpecificationExtractor:
         model: type[T],
         schema: dict[str, str | FieldSpec | ItemSpec] | None = None,
         strict: bool = True,
-    ):
+    ) -> None:
         """
         Args:
             model: Pydantic model for validation and type safety.
             schema: Optional explicit schema mapping field names to selectors.
                     If None, uses model's field aliases or names.
-            strict: If True, raise ScrapeFlowValidationError on validation failure.
+            strict: If True, wrap validation failures in ScrapeFlowValidationError;
+                    if False, re-raise the underlying pydantic error unchanged.
         """
         self.model = model
-        self.schema = schema or {}
+        self.schema: dict[str, str | FieldSpec | ItemSpec] = schema or {}
         self.strict = strict
 
     async def extract(self, page: Page) -> T:
@@ -181,7 +184,7 @@ class SpecificationExtractor:
                 count = await item_elements.count()
                 for i in range(count):
                     item_locator = item_elements.nth(i)
-                    item_data = {}
+                    item_data: dict[str, Any] = {}
                     for item_key, item_spec in spec.fields.items():
                         item_data[item_key] = await _extract_from_locator(
                             item_locator, item_spec, base_url=page.url
@@ -219,8 +222,7 @@ class ProductPriceSpec(BaseModel):
     def normalize_price(cls, v: Any) -> str:
         if v is None:
             return ""
-        s = str(v).strip()
-        return s
+        return str(v).strip()
 
 
 class JobListingSpec(BaseModel):
@@ -250,7 +252,7 @@ def _field_descriptions_from_model(
     model: type[T], schema: dict[str, str | FieldSpec | ItemSpec]
 ) -> dict[str, str]:
     """Build field_descriptions for LLM from model and schema (single fields only)."""
-    descriptions = {}
+    descriptions: dict[str, str] = {}
     for key in schema:
         if isinstance(schema[key], ItemSpec):
             continue
@@ -260,7 +262,7 @@ def _field_descriptions_from_model(
     return descriptions
 
 
-class HybridExtractor:
+class HybridExtractor(Generic[T]):
     """
     Extract using selectors first, fall back to LLM when validation fails or result is empty.
 
@@ -275,14 +277,16 @@ class HybridExtractor:
         strict: bool = True,
         mcp_backend: Any | None = None,
         use_llm_fallback: bool = True,
-    ):
-        self.spec_extractor = SpecificationExtractor(model=model, schema=schema, strict=strict)
-        self.schema = schema or {}
+    ) -> None:
+        self.spec_extractor: SpecificationExtractor[T] = SpecificationExtractor(
+            model=model, schema=schema, strict=strict
+        )
+        self.schema: dict[str, str | FieldSpec | ItemSpec] = schema or {}
         self.model = model
         self.use_llm_fallback = use_llm_fallback
         self._mcp = mcp_backend
 
-    def _get_mcp(self):
+    def _get_mcp(self) -> Any:
         if self._mcp is not None:
             return self._mcp
         from scrapeflow.mcp_backend import create_mcp_backend
@@ -292,20 +296,17 @@ class HybridExtractor:
     async def extract(self, page: Page) -> T:
         """Extract: try selectors first, fall back to LLM on failure."""
         try:
-            result = await self.spec_extractor.extract(page)
-            # Skip fallback if we got valid result
-            if result is not None:
-                return result
+            return await self.spec_extractor.extract(page)
         except ScrapeFlowValidationError:
-            pass
+            pass  # selectors produced invalid data: fall through to the LLM
         except Exception:
             if self.spec_extractor.strict:
                 raise
-            pass
 
         if not self.use_llm_fallback or _schema_has_item_spec(self.schema):
             raise ScrapeFlowValidationError(
-                f"Selector extraction failed for {self.model.__name__} and LLM fallback disabled or schema has ItemSpec"
+                f"Selector extraction failed for {self.model.__name__}, and LLM fallback is "
+                "disabled or the schema contains an ItemSpec (lists are not LLM-extractable)"
             )
 
         mcp = self._get_mcp()

@@ -56,7 +56,7 @@ class SelectorRegistry:
     across multiple extraction jobs.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._selectors: dict[str, SelectorComponent] = {}
         self._pagination: dict[str, PaginationHandler] = {}
         self._login: dict[str, LoginHandler] = {}

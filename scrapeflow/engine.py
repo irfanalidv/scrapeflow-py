@@ -1,6 +1,9 @@
 """Main ScrapeFlow engine that orchestrates all components."""
 
+from __future__ import annotations
+
 import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -10,11 +13,12 @@ from scrapeflow.anti_detection import AntiDetectionManager
 from scrapeflow.browser_runtime import PlaywrightBrowserRuntime
 from scrapeflow.config import ScrapeFlowConfig
 from scrapeflow.exceptions import (
-    ScrapeFlowError,
+    ScrapeFlowBlockedError,
+    ScrapeFlowNotStartedError,
     ScrapeFlowRobotsDisallowedError,
     ScrapeFlowTimeoutError,
 )
-from scrapeflow.monitoring import Logger, PerformanceMonitor
+from scrapeflow.monitoring import Logger, PerformanceMonitor, ScrapeMetrics
 from scrapeflow.ports import (
     BrowserRuntimePort,
     LoggerPort,
@@ -25,14 +29,30 @@ from scrapeflow.ports import (
 )
 from scrapeflow.rate_limiter import RateLimiter
 from scrapeflow.registry import LoginHandler
-from scrapeflow.retry import ErrorClassifier, RetryHandler
+from scrapeflow.retry import RetryHandler
 from scrapeflow.robots import RobotsChecker
 from scrapeflow.workflow import Step, Workflow, WorkflowResult
 from scrapeflow.workflow_executor import WorkflowExecutor
 
+#: Transient errors that make a ``retryable`` workflow step worth running again.
+#: ``ScrapeFlowRetryError`` is deliberately absent: it means an inner operation (such as
+#: ``navigate``) already used up its own retries, and retrying again would multiply attempts.
+_RETRYABLE_STEP_ERRORS: tuple[type[Exception], ...] = (
+    ConnectionError,
+    TimeoutError,
+    asyncio.TimeoutError,
+    ScrapeFlowTimeoutError,
+    ScrapeFlowBlockedError,
+)
+
 
 class ScrapeFlow:
-    """Main ScrapeFlow engine for web scraping workflows."""
+    """Main ScrapeFlow engine for web scraping workflows.
+
+    Every collaborator (rate limiter, retry handler, logger, monitor, robots checker, browser
+    runtime, workflow executor) can be injected; anything not supplied gets the default
+    implementation built from ``config``.
+    """
 
     def __init__(
         self,
@@ -45,37 +65,49 @@ class ScrapeFlow:
         robots_checker: RobotsCheckerPort | None = None,
         runtime: BrowserRuntimePort | None = None,
         workflow_executor: WorkflowExecutor | None = None,
-    ):
+    ) -> None:
         self.config = config or ScrapeFlowConfig()
         self.page: Page | None = None
 
         # Initialize components
         self.anti_detection = AntiDetectionManager(self.config.anti_detection)
-        self.rate_limiter = rate_limiter or RateLimiter(self.config.rate_limit)
-        self.retry_handler = retry_handler or RetryHandler(self.config.retry)
-        self.logger = logger or Logger(
+        self.rate_limiter: RateLimiterPort = rate_limiter or RateLimiter(self.config.rate_limit)
+        self.retry_handler: RetryHandlerPort = retry_handler or RetryHandler(self.config.retry)
+        self.logger: LoggerPort = logger or Logger(
             name="scrapeflow", level=self.config.log_level, log_file=self.config.log_file
         )
-        self.monitor = monitor or PerformanceMonitor()
-        self.robots_checker = robots_checker or RobotsChecker(
+        self.monitor: MonitorPort = monitor or PerformanceMonitor()
+        self.robots_checker: RobotsCheckerPort = robots_checker or RobotsChecker(
             user_agent=self.config.ethical_crawling.user_agent_for_robots,
             respect_robots=self.config.ethical_crawling.respect_robots_txt,
         )
-        self.runtime = runtime or PlaywrightBrowserRuntime(self.config, self.anti_detection)
+        self.runtime: BrowserRuntimePort = runtime or PlaywrightBrowserRuntime(
+            self.config, self.anti_detection
+        )
         self.workflow_executor = workflow_executor or WorkflowExecutor()
 
         self._is_running = False
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> ScrapeFlow:
         """Async context manager entry."""
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.close()
 
-    async def start(self):
+    def _require_page(self) -> Page:
+        """Return the active page, or raise a clear error if the engine is not running."""
+        if not self._is_running or self.page is None:
+            raise ScrapeFlowNotStartedError("Engine not started. Call start() first.")
+        return self.page
+
+    def _timeout_ms(self, timeout: int | None) -> int:
+        """Resolve a per-call timeout. ``0`` is passed through (Playwright: no timeout)."""
+        return self.config.browser.timeout if timeout is None else timeout
+
+    async def start(self) -> None:
         """Start the browser and initialize resources."""
         if self._is_running:
             return
@@ -87,7 +119,7 @@ class ScrapeFlow:
         self._is_running = True
         self.logger.info("ScrapeFlow engine started successfully")
 
-    async def close(self):
+    async def close(self) -> None:
         """Close browser and cleanup resources."""
         if not self._is_running:
             return
@@ -99,8 +131,16 @@ class ScrapeFlow:
         self._is_running = False
         self.logger.info("ScrapeFlow engine closed")
 
-    async def navigate(self, url: str, wait_until: str = "load", timeout: int | None = None):
-        """Navigate to a URL with rate limiting, robots.txt check, and retry logic."""
+    async def navigate(
+        self, url: str, wait_until: str = "load", timeout: int | None = None
+    ) -> None:
+        """Navigate to a URL with robots.txt check, rate limiting and retry logic.
+
+        Raises:
+            ScrapeFlowRobotsDisallowedError: robots.txt disallows ``url`` (checked first,
+                before any request to the page itself).
+            ScrapeFlowRetryError: navigation still failed after all retries.
+        """
         if not self._is_running:
             await self.start()
 
@@ -110,10 +150,10 @@ class ScrapeFlow:
             raise ScrapeFlowRobotsDisallowedError(f"robots.txt disallows fetching: {url}")
 
         start_time = self.monitor.start_request()
+        timeout_ms = self._timeout_ms(timeout)
 
-        async def _navigate():
+        async def _navigate() -> None:
             await self.rate_limiter.acquire()
-            timeout_ms = timeout or self.config.browser.timeout
             await self.runtime.goto(url, wait_until=wait_until, timeout=timeout_ms)
             self.page = self.runtime.page
 
@@ -126,30 +166,26 @@ class ScrapeFlow:
             self.logger.info(f"Successfully navigated to {url}")
         except Exception as e:
             self.monitor.end_request(start_time, success=False, error=e)
-            self.logger.error(f"Failed to navigate to {url}: {str(e)}")
+            self.logger.error(f"Failed to navigate to {url}: {e!s}")
             raise
 
-    async def click(self, selector: str, timeout: int | None = None):
+    async def click(self, selector: str, timeout: int | None = None) -> None:
         """Click an element with retry logic."""
-        if not self._is_running:
-            raise ScrapeFlowError("Engine not started. Call start() first.")
+        page = self._require_page()
+        timeout_ms = self._timeout_ms(timeout)
 
-        timeout_ms = timeout or self.config.browser.timeout
-
-        async def _click():
-            await self.page.click(selector, timeout=timeout_ms)
+        async def _click() -> None:
+            await page.click(selector, timeout=timeout_ms)
 
         await self.retry_handler.execute_with_retry(_click)
 
-    async def fill(self, selector: str, value: str, timeout: int | None = None):
+    async def fill(self, selector: str, value: str, timeout: int | None = None) -> None:
         """Fill an input field with retry logic."""
-        if not self._is_running:
-            raise ScrapeFlowError("Engine not started. Call start() first.")
+        page = self._require_page()
+        timeout_ms = self._timeout_ms(timeout)
 
-        timeout_ms = timeout or self.config.browser.timeout
-
-        async def _fill():
-            await self.page.fill(selector, value, timeout=timeout_ms)
+        async def _fill() -> None:
+            await page.fill(selector, value, timeout=timeout_ms)
 
         await self.retry_handler.execute_with_retry(_fill)
 
@@ -181,8 +217,10 @@ class ScrapeFlow:
         if success_selector:
             try:
                 await self.wait_for_selector(success_selector, timeout=timeout)
-                return True
-            except Exception:
+            except Exception as exc:
+                self.logger.warning(
+                    f"Login check failed: {success_selector!r} did not appear ({exc!s})"
+                )
                 return False
         return True
 
@@ -210,78 +248,86 @@ class ScrapeFlow:
 
     async def wait_for_selector(
         self, selector: str, timeout: int | None = None, state: str = "visible"
-    ):
-        """Wait for a selector to appear."""
-        if not self._is_running:
-            raise ScrapeFlowError("Engine not started. Call start() first.")
+    ) -> None:
+        """Wait for a selector to reach ``state`` (default ``"visible"``)."""
+        page = self._require_page()
+        await page.wait_for_selector(
+            selector,
+            timeout=self._timeout_ms(timeout),
+            state=state,  # type: ignore[arg-type]
+        )
 
-        timeout_ms = timeout or self.config.browser.timeout
-        await self.page.wait_for_selector(selector, timeout=timeout_ms, state=state)
-
-    async def screenshot(self, path: str, full_page: bool = False):
+    async def screenshot(self, path: str, full_page: bool = False) -> None:
         """Take a screenshot."""
-        if not self._is_running:
-            raise ScrapeFlowError("Engine not started. Call start() first.")
-
-        await self.page.screenshot(path=path, full_page=full_page)
+        page = self._require_page()
+        await page.screenshot(path=path, full_page=full_page)
 
     async def save_storage_state(self, path: str) -> None:
-        """Save cookies and local storage for session persistence. Use with storage_state_path on next run."""
-        if not self._is_running:
-            raise ScrapeFlowError("Engine not started. Call start() first.")
-        await self.runtime.save_storage_state(path)
+        """Save cookies and local storage; load them later with ``storage_state_path``."""
+        self._require_page()
+        save = getattr(self.runtime, "save_storage_state", None)
+        if save is None:
+            raise ScrapeFlowNotStartedError(
+                f"{type(self.runtime).__name__} does not support save_storage_state()"
+            )
+        await save(path)
 
-    async def execute_step(self, step: Step, context: dict[str, Any]) -> Any:
-        """Execute a workflow step with retry and error handling."""
-        start_time = self.monitor.start_request()
-
+    async def _run_step_once(self, step: Step, context: dict[str, Any]) -> Any:
+        kwargs = {**step.kwargs, "context": context, "page": self.page}
+        call = self._execute_function(step.func, *step.args, **kwargs)
+        if not step.timeout:
+            return await call
         try:
-            # Prepare function arguments
-            func = step.func
-            args = step.args
-            kwargs = {**step.kwargs, **{"context": context, "page": self.page}}
-
-            # Execute with timeout if specified
-            if step.timeout:
-                result = await asyncio.wait_for(
-                    self._execute_function(func, *args, **kwargs),
-                    timeout=step.timeout,
-                )
-            else:
-                result = await self._execute_function(func, *args, **kwargs)
-
-            self.monitor.end_request(start_time, success=True)
-            return result
-
+            return await asyncio.wait_for(call, timeout=step.timeout)
         except asyncio.TimeoutError as exc:
-            self.monitor.end_request(start_time, success=False, error=TimeoutError())
             raise ScrapeFlowTimeoutError(
                 f"Step '{step.name}' timed out after {step.timeout}s"
             ) from exc
+
+    async def execute_step(self, step: Step, context: dict[str, Any]) -> Any:
+        """Execute a workflow step with timeout, metrics and optional retries.
+
+        A step with ``retryable=True`` is re-run through the engine's retry handler when it
+        fails with a transient error (connection errors, timeouts, ``ScrapeFlowBlockedError``);
+        once retries run out the handler raises ``ScrapeFlowRetryError``. Any other exception
+        propagates immediately.
+        """
+        start_time = self.monitor.start_request()
+        attempts = 0
+
+        async def _attempt() -> Any:
+            nonlocal attempts
+            if attempts:
+                self.monitor.record_retry()
+            attempts += 1
+            return await self._run_step_once(step, context)
+
+        try:
+            if step.retryable:
+                result = await self.retry_handler.execute_with_retry(
+                    _attempt, retryable_exceptions=_RETRYABLE_STEP_ERRORS
+                )
+            else:
+                result = await _attempt()
         except Exception as e:
             self.monitor.end_request(start_time, success=False, error=e)
-
-            if step.retryable and ErrorClassifier.is_retryable(e):
-                self.monitor.record_retry()
-                raise  # Let retry handler deal with it
             raise
+        self.monitor.end_request(start_time, success=True)
+        return result
 
-    async def _execute_function(self, func: Callable, *args, **kwargs) -> Any:
-        """Execute a function, handling both sync and async."""
-        if asyncio.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        else:
-            return func(*args, **kwargs)
+    async def _execute_function(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Call ``func`` and await the result if it is awaitable (sync and async both work)."""
+        result = func(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
-    async def _safe_call(self, func: Callable, *args, **kwargs):
-        """Safely call a function, handling errors."""
+    async def _safe_call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        """Call a user callback, logging (not raising) any error it throws."""
         try:
-            if asyncio.iscoroutinefunction(func):
-                await func(*args, **kwargs)
-            else:
-                func(*args, **kwargs)
+            await self._execute_function(func, *args, **kwargs)
         except Exception as e:
-            self.logger.warning(f"Callback function failed: {str(e)}")
+            self.logger.warning(f"Callback function failed: {e!s}")
 
     async def run_workflow(self, workflow: Workflow) -> WorkflowResult:
         """Run a complete workflow."""
@@ -296,10 +342,11 @@ class ScrapeFlow:
         )
         return result
 
-    def get_metrics(self):
+    def get_metrics(self) -> ScrapeMetrics:
         """Get current performance metrics."""
-        return self.monitor.get_metrics()
+        metrics: ScrapeMetrics = self.monitor.get_metrics()
+        return metrics
 
-    def reset_metrics(self):
+    def reset_metrics(self) -> None:
         """Reset performance metrics."""
         self.monitor.reset()

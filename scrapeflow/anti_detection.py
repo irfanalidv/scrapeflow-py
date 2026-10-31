@@ -1,6 +1,9 @@
 """Anti-detection utilities for web scraping."""
 
+from __future__ import annotations
+
 import random
+from typing import Any, ClassVar
 
 from scrapeflow.config import AntiDetectionConfig
 
@@ -8,7 +11,7 @@ from scrapeflow.config import AntiDetectionConfig
 class UserAgentRotator:
     """Manages user agent rotation."""
 
-    DEFAULT_USER_AGENTS = [
+    DEFAULT_USER_AGENTS: ClassVar[list[str]] = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -18,14 +21,14 @@ class UserAgentRotator:
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ]
 
-    def __init__(self, user_agents: list[str] | None = None):
-        self.user_agents = user_agents or self.DEFAULT_USER_AGENTS
+    def __init__(self, user_agents: list[str] | None = None) -> None:
+        self.user_agents = list(user_agents or self.DEFAULT_USER_AGENTS)
 
     def get_random(self) -> str:
         """Get a random user agent."""
         return random.choice(self.user_agents)
 
-    def get(self, index: int = None) -> str:
+    def get(self, index: int | None = None) -> str:
         """Get a user agent by index or random."""
         if index is not None:
             return self.user_agents[index % len(self.user_agents)]
@@ -35,7 +38,7 @@ class UserAgentRotator:
 class ProxyRotator:
     """Manages proxy rotation."""
 
-    def __init__(self, proxies: list[dict[str, str]]):
+    def __init__(self, proxies: list[dict[str, str]]) -> None:
         self.proxies = proxies
         self.current_index = 0
 
@@ -58,7 +61,7 @@ class StealthMode:
     """Applies stealth techniques to avoid detection."""
 
     @staticmethod
-    async def apply_stealth(page):
+    async def apply_stealth(page: Any) -> None:
         """Apply stealth techniques to a Playwright page."""
         # Remove webdriver property
         await page.add_init_script("""
@@ -102,7 +105,7 @@ class StealthMode:
 class AntiDetectionManager:
     """Manages all anti-detection features."""
 
-    def __init__(self, config: AntiDetectionConfig):
+    def __init__(self, config: AntiDetectionConfig) -> None:
         self.config = config
         self.user_agent_rotator = (
             UserAgentRotator(config.user_agents) if config.rotate_user_agents else None
@@ -121,7 +124,7 @@ class AntiDetectionManager:
             return self.proxy_rotator.get_next()
         return None
 
-    async def apply_stealth(self, page):
+    async def apply_stealth(self, page: Any) -> None:
         """Apply stealth mode to a page if enabled."""
         if self.config.stealth_mode:
             await StealthMode.apply_stealth(page)

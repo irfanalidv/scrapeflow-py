@@ -9,9 +9,9 @@ class WorkflowExecutor:
     """Application service for executing workflows."""
 
     async def execute(self, workflow: Any, engine: Any) -> WorkflowResult:
-        steps_completed = []
-        steps_failed = []
-        final_data = None
+        steps_completed: list[str] = []
+        steps_failed: list[str] = []
+        final_data: Any = None
 
         workflow.context["scraper"] = engine
 

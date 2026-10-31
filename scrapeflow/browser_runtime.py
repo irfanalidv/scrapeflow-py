@@ -1,5 +1,10 @@
 """Playwright browser runtime adapter."""
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
 from playwright.async_api import (
     Browser,
     BrowserContext,
@@ -10,12 +15,13 @@ from playwright.async_api import (
 
 from scrapeflow.anti_detection import AntiDetectionManager
 from scrapeflow.config import BrowserType, ScrapeFlowConfig
+from scrapeflow.exceptions import ScrapeFlowNotStartedError
 
 
 class PlaywrightBrowserRuntime:
     """Infrastructure adapter for Playwright lifecycle and navigation."""
 
-    def __init__(self, config: ScrapeFlowConfig, anti_detection: AntiDetectionManager):
+    def __init__(self, config: ScrapeFlowConfig, anti_detection: AntiDetectionManager) -> None:
         self.config = config
         self.anti_detection = anti_detection
         self.playwright: Playwright | None = None
@@ -29,9 +35,21 @@ class PlaywrightBrowserRuntime:
         return self._page
 
     async def start(self) -> None:
+        """Launch Playwright, the browser, a context and a page.
+
+        If any step fails, everything already launched is shut down before the error is
+        re-raised, so a failed start never leaks a browser process.
+        """
         if self._is_running:
             return
+        try:
+            await self._launch()
+        except BaseException:
+            await self._teardown()
+            raise
+        self._is_running = True
 
+    async def _launch(self) -> None:
         self.playwright = await async_playwright().start()
         browser_type_map = {
             BrowserType.CHROMIUM: self.playwright.chromium,
@@ -55,31 +73,31 @@ class PlaywrightBrowserRuntime:
             headless=self.config.browser.headless,
             slow_mo=self.config.browser.slow_mo,
             args=browser_args,
-            proxy=proxy,
+            proxy=proxy,  # type: ignore[arg-type]
         )
 
-        context_options = {
+        context_options: dict[str, Any] = {
             "viewport": {
                 "width": self.config.anti_detection.viewport_width,
                 "height": self.config.anti_detection.viewport_height,
             },
             "user_agent": self.anti_detection.get_user_agent(),
         }
-        if self.config.browser.storage_state_path:
-            import os
-
-            if os.path.exists(self.config.browser.storage_state_path):
-                context_options["storage_state"] = self.config.browser.storage_state_path
+        state_path = self.config.browser.storage_state_path
+        if state_path and Path(state_path).exists():
+            context_options["storage_state"] = state_path
         self.context = await self.browser.new_context(**context_options)
         self._page = await self.context.new_page()
         await self.anti_detection.apply_stealth(self._page)
         self._page.set_default_timeout(self.config.browser.timeout)
-        self._is_running = True
 
     async def close(self) -> None:
+        """Close the page, context, browser and Playwright driver."""
         if not self._is_running:
             return
+        await self._teardown()
 
+    async def _teardown(self) -> None:
         if self._page:
             await self._page.close()
             self._page = None
@@ -96,11 +114,11 @@ class PlaywrightBrowserRuntime:
 
     async def goto(self, url: str, wait_until: str, timeout: int) -> None:
         if not self._page:
-            raise RuntimeError("Browser runtime is not started.")
-        await self._page.goto(url, wait_until=wait_until, timeout=timeout)
+            raise ScrapeFlowNotStartedError("Browser runtime is not started.")
+        await self._page.goto(url, wait_until=wait_until, timeout=timeout)  # type: ignore[arg-type]
 
     async def save_storage_state(self, path: str) -> None:
         """Save cookies and local storage to a JSON file for session persistence."""
         if not self.context:
-            raise RuntimeError("Browser runtime is not started.")
+            raise ScrapeFlowNotStartedError("Browser runtime is not started.")
         await self.context.storage_state(path=path)

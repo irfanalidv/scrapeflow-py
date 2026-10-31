@@ -1,9 +1,14 @@
 """Workflow engine for defining and executing scraping workflows."""
 
+from __future__ import annotations
+
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class StepStatus(str, Enum):
@@ -21,23 +26,28 @@ class Step:
     """A single step in a workflow."""
 
     name: str
-    func: Callable
-    args: tuple = field(default_factory=tuple)
+    func: Callable[..., Any]
+    args: tuple[Any, ...] = field(default_factory=tuple)
     kwargs: dict[str, Any] = field(default_factory=dict)
     retryable: bool = True
     required: bool = True
-    on_success: Callable | None = None
-    on_error: Callable | None = None
-    condition: Callable | None = None
+    on_success: Callable[..., Any] | None = None
+    on_error: Callable[..., Any] | None = None
+    condition: Callable[[dict[str, Any]], Any] | None = None
     timeout: float | None = None
 
     def should_execute(self, context: dict[str, Any]) -> bool:
-        """Check if step should be executed based on condition."""
+        """Check if step should be executed based on condition.
+
+        A condition that raises is treated as False (the step is skipped); the error is
+        logged at WARNING level.
+        """
         if self.condition is None:
             return True
         try:
             return bool(self.condition(context))
-        except Exception:
+        except Exception as exc:
+            logger.warning("Condition for step %r raised %r; skipping step", self.name, exc)
             return False
 
 
@@ -56,7 +66,7 @@ class WorkflowResult:
 class Workflow:
     """Defines and executes a scraping workflow."""
 
-    def __init__(self, name: str = "default"):
+    def __init__(self, name: str = "default") -> None:
         self.name = name
         self.steps: list[Step] = []
         self.context: dict[str, Any] = {}
@@ -64,16 +74,16 @@ class Workflow:
     def add_step(
         self,
         name: str,
-        func: Callable,
-        *args,
+        func: Callable[..., Any],
+        *args: Any,
         retryable: bool = True,
         required: bool = True,
-        on_success: Callable | None = None,
-        on_error: Callable | None = None,
-        condition: Callable | None = None,
+        on_success: Callable[..., Any] | None = None,
+        on_error: Callable[..., Any] | None = None,
+        condition: Callable[[dict[str, Any]], Any] | None = None,
         timeout: float | None = None,
-        **kwargs,
-    ) -> "Workflow":
+        **kwargs: Any,
+    ) -> Workflow:
         """Add a step to the workflow."""
         step = Step(
             name=name,
@@ -90,7 +100,7 @@ class Workflow:
         self.steps.append(step)
         return self
 
-    def set_context(self, key: str, value: Any):
+    def set_context(self, key: str, value: Any) -> None:
         """Set a value in the workflow context."""
         self.context[key] = value
 
@@ -98,7 +108,7 @@ class Workflow:
         """Get a value from the workflow context."""
         return self.context.get(key, default)
 
-    async def execute(self, engine) -> WorkflowResult:
+    async def execute(self, engine: Any) -> WorkflowResult:
         """Execute workflow through the dedicated executor service."""
         from scrapeflow.workflow_executor import WorkflowExecutor
 

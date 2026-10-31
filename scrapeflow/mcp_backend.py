@@ -8,6 +8,9 @@ Spiders can rely on field descriptions rather than fragile XPaths when
 using semantic extraction backends.
 """
 
+from __future__ import annotations
+
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -45,7 +48,6 @@ class MCPBackend(ABC):
         Returns:
             Extracted data keyed by field name.
         """
-        pass
 
     @abstractmethod
     async def detect_layout_change(
@@ -63,7 +65,6 @@ class MCPBackend(ABC):
         Returns:
             Map of selector -> True if found, False if missing.
         """
-        pass
 
     @abstractmethod
     async def suggest_repair(
@@ -85,7 +86,6 @@ class MCPBackend(ABC):
         Returns:
             Map of field/selector name -> new selector, or None if repair failed.
         """
-        pass
 
 
 class PlaceholderMCPBackend(MCPBackend):
@@ -109,7 +109,7 @@ class PlaceholderMCPBackend(MCPBackend):
         self, page: Page, expected_selectors: list[str]
     ) -> dict[str, bool]:
         """Basic check: locator.count() > 0."""
-        result = {}
+        result: dict[str, bool] = {}
         for sel in expected_selectors:
             try:
                 count = await page.locator(sel).count()
@@ -136,7 +136,7 @@ class MistralLLMBackend(MCPBackend):
     using field descriptions—no selectors required.
     """
 
-    def __init__(self, model: str = "mistral-small-latest"):
+    def __init__(self, model: str = "mistral-small-latest") -> None:
         self.model = model
 
     async def extract_with_semantics(
@@ -172,7 +172,7 @@ class MistralLLMBackend(MCPBackend):
         self, page: Page, expected_selectors: list[str]
     ) -> dict[str, bool]:
         """Basic selector presence check."""
-        result = {}
+        result: dict[str, bool] = {}
         for sel in expected_selectors:
             try:
                 count = await page.locator(sel).count()
@@ -202,14 +202,17 @@ class MistralLLMBackend(MCPBackend):
             },
             "required": [f"selector_for_{k}" for k in field_descriptions],
         }
-        prompt = f"Failed selectors: {failed_selectors}. Suggest new CSS selectors that would extract these fields from the HTML. Return only valid CSS selectors."
+        prompt = (
+            f"Failed selectors: {failed_selectors}. Suggest new CSS selectors that would "
+            "extract these fields from the HTML. Return only valid CSS selectors."
+        )
         result = await extract_with_schema_async(
             html[:60000], schema, prompt=prompt, model=self.model
         )
         return result if result else None
 
 
-def create_mcp_backend(backend_type: str = "placeholder", **kwargs) -> MCPBackend:
+def create_mcp_backend(backend_type: str = "placeholder", **kwargs: Any) -> MCPBackend:
     """
     Factory for MCP backends.
 
@@ -225,8 +228,6 @@ def create_mcp_backend(backend_type: str = "placeholder", **kwargs) -> MCPBacken
     if backend_type == "mistral":
         return MistralLLMBackend(model=kwargs.get("model", "mistral-small-latest"))
     if backend_type in ("scrapy_mcp", "playwright_mcp"):
-        import warnings
-
         warnings.warn(
             f"MCP backend {backend_type!r} is not implemented yet; using PlaceholderMCPBackend "
             "(extraction returns no data). Subclass MCPBackend to plug in your own server.",
